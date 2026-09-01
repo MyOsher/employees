@@ -274,6 +274,13 @@ function resetEntryForm() {
 $('#entry-cancel').onclick = resetEntryForm;
 $('#entries-filter-apply').onclick = loadEntries;
 
+$('#clock-in-now').onclick = () => {
+  entryForm.clock_in.value = toLocalInputValue(new Date().toISOString());
+};
+$('#clock-out-now').onclick = () => {
+  entryForm.clock_out.value = toLocalInputValue(new Date().toISOString());
+};
+
 entryForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = entryForm.id.value;

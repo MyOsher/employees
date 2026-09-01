@@ -88,6 +88,14 @@ input, select {
 .row-form input[name="name"], .row-form input[name="email"] { min-width: 12rem; }
 .check { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
 
+.field-with-now { display: inline-flex; gap: 0.25rem; align-items: center; }
+.now-btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .filters {
   display: flex;
   flex-wrap: wrap;

@@ -53,8 +53,14 @@
       <form id="entry-form" class="row-form">
         <input type="hidden" name="id">
         <select name="employee_id" required></select>
-        <input name="clock_in" type="datetime-local" required title="Clock in">
-        <input name="clock_out" type="datetime-local" title="Clock out">
+        <span class="field-with-now">
+          <input name="clock_in" type="datetime-local" required title="Clock in">
+          <button type="button" class="now-btn" id="clock-in-now" title="Set clock in to current time">Now</button>
+        </span>
+        <span class="field-with-now">
+          <input name="clock_out" type="datetime-local" title="Clock out">
+          <button type="button" class="now-btn" id="clock-out-now" title="Set clock out to current time">Now</button>
+        </span>
         <input name="break_minutes" type="number" min="0" step="1" placeholder="Break (min)">
         <input name="notes" placeholder="Notes">
         <button type="submit" class="primary">Save</button>
