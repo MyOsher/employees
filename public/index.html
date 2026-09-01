@@ -8,13 +8,14 @@
 </head>
 <body>
   <header>
-    <h1>⏱ Work Hours</h1>
+    <h1>⏱ <span data-i18n="appTitle">Work Hours</span></h1>
     <nav>
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="employees">Employees</button>
-      <button class="tab" data-tab="entries">Time Entries</button>
-      <button class="tab" data-tab="reports">Reports</button>
+      <button class="tab active" data-tab="dashboard" data-i18n="tabDashboard">Dashboard</button>
+      <button class="tab" data-tab="employees" data-i18n="tabEmployees">Employees</button>
+      <button class="tab" data-tab="entries" data-i18n="tabEntries">Time Entries</button>
+      <button class="tab" data-tab="reports" data-i18n="tabReports">Reports</button>
     </nav>
+    <button id="lang-toggle" class="lang">עברית</button>
   </header>
 
   <main>
@@ -22,24 +23,24 @@
 
     <!-- Dashboard -->
     <section id="tab-dashboard" class="panel">
-      <h2>Today</h2>
+      <h2 data-i18n="today">Today</h2>
       <div id="dashboard-cards" class="cards"></div>
     </section>
 
     <!-- Employees -->
     <section id="tab-employees" class="panel" hidden>
-      <h2>Employees</h2>
+      <h2 data-i18n="tabEmployees">Employees</h2>
       <form id="employee-form" class="row-form">
         <input type="hidden" name="id">
-        <input name="name" placeholder="Full name" required>
-        <input name="email" type="email" placeholder="Email (optional)">
-        <label class="check"><input name="active" type="checkbox" checked> Active</label>
-        <button type="submit" class="primary">Save</button>
-        <button type="button" id="employee-cancel" hidden>Cancel</button>
+        <input name="name" data-i18n-placeholder="fullName" placeholder="Full name" required>
+        <input name="email" type="email" data-i18n-placeholder="emailOptional" placeholder="Email (optional)">
+        <label class="check"><input name="active" type="checkbox" checked> <span data-i18n="active">Active</span></label>
+        <button type="submit" class="primary" data-i18n="save">Save</button>
+        <button type="button" id="employee-cancel" data-i18n="cancel" hidden>Cancel</button>
       </form>
       <table id="employees-table">
         <thead>
-          <tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr>
+          <tr><th data-i18n="thName">Name</th><th data-i18n="thEmail">Email</th><th data-i18n="thStatus">Status</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -47,32 +48,32 @@
 
     <!-- Time entries -->
     <section id="tab-entries" class="panel" hidden>
-      <h2>Time Entries</h2>
+      <h2 data-i18n="tabEntries">Time Entries</h2>
       <form id="entry-form" class="row-form">
         <input type="hidden" name="id">
         <select name="employee_id" required></select>
         <span class="field-with-now">
-          <input name="clock_in" type="datetime-local" required title="Clock in">
-          <button type="button" class="now-btn" id="clock-in-now" title="Set clock in to current time">Now</button>
+          <input name="clock_in" type="datetime-local" required>
+          <button type="button" class="now-btn" id="clock-in-now" data-i18n="now">Now</button>
         </span>
         <span class="field-with-now">
-          <input name="clock_out" type="datetime-local" title="Clock out">
-          <button type="button" class="now-btn" id="clock-out-now" title="Set clock out to current time">Now</button>
+          <input name="clock_out" type="datetime-local">
+          <button type="button" class="now-btn" id="clock-out-now" data-i18n="now">Now</button>
         </span>
-        <input name="break_minutes" type="number" min="0" step="1" placeholder="Break (min)">
-        <input name="notes" placeholder="Notes">
-        <button type="submit" class="primary">Save</button>
-        <button type="button" id="entry-cancel" hidden>Cancel</button>
+        <input name="break_minutes" type="number" min="0" step="1" data-i18n-placeholder="breakMin" placeholder="Break (min)">
+        <input name="notes" data-i18n-placeholder="notes" placeholder="Notes">
+        <button type="submit" class="primary" data-i18n="save">Save</button>
+        <button type="button" id="entry-cancel" data-i18n="cancel" hidden>Cancel</button>
       </form>
       <div class="filters">
-        <select id="entries-filter-employee"><option value="">All employees</option></select>
+        <select id="entries-filter-employee"></select>
         <input id="entries-filter-from" type="date"> –
         <input id="entries-filter-to" type="date">
-        <button id="entries-filter-apply">Filter</button>
+        <button id="entries-filter-apply" data-i18n="filter">Filter</button>
       </div>
       <table id="entries-table">
         <thead>
-          <tr><th>Employee</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Hours</th><th>Notes</th><th></th></tr>
+          <tr><th data-i18n="thEmployee">Employee</th><th data-i18n="thDate">Date</th><th data-i18n="thIn">In</th><th data-i18n="thOut">Out</th><th data-i18n="thBreak">Break</th><th data-i18n="thHours">Hours</th><th data-i18n="thNotes">Notes</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -80,18 +81,18 @@
 
     <!-- Reports -->
     <section id="tab-reports" class="panel" hidden>
-      <h2>Reports</h2>
+      <h2 data-i18n="tabReports">Reports</h2>
       <div class="filters">
         <input id="report-from" type="date"> –
         <input id="report-to" type="date">
-        <button id="report-run" class="primary">Run report</button>
-        <button id="report-week">This week</button>
-        <button id="report-month">This month</button>
-        <a id="report-csv" href="#" download hidden>Download CSV</a>
+        <button id="report-run" class="primary" data-i18n="runReport">Run report</button>
+        <button id="report-week" data-i18n="thisWeek">This week</button>
+        <button id="report-month" data-i18n="thisMonth">This month</button>
+        <a id="report-csv" href="#" download data-i18n="downloadCsv" hidden>Download CSV</a>
       </div>
       <table id="report-table">
         <thead>
-          <tr><th>Employee</th><th>Total hours</th><th>Days</th><th>Entries</th></tr>
+          <tr><th data-i18n="thEmployee">Employee</th><th data-i18n="thTotalHours">Total hours</th><th data-i18n="thDays">Days</th><th data-i18n="thEntries">Entries</th></tr>
         </thead>
         <tbody></tbody>
       </table>
