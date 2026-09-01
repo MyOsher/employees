@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Work Hours</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>⏱ Work Hours</h1>
+    <nav>
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="employees">Employees</button>
+      <button class="tab" data-tab="entries">Time Entries</button>
+      <button class="tab" data-tab="reports">Reports</button>
+    </nav>
+  </header>
+
+  <main>
+    <div id="toast" hidden></div>
+
+    <!-- Dashboard -->
+    <section id="tab-dashboard" class="panel">
+      <h2>Today</h2>
+      <div id="dashboard-cards" class="cards"></div>
+    </section>
+
+    <!-- Employees -->
+    <section id="tab-employees" class="panel" hidden>
+      <h2>Employees</h2>
+      <form id="employee-form" class="row-form">
+        <input type="hidden" name="id">
+        <input name="name" placeholder="Full name" required>
+        <input name="email" type="email" placeholder="Email (optional)">
+        <input name="role" placeholder="Role">
+        <input name="hourly_rate" type="number" step="0.01" min="0" placeholder="Hourly rate">
+        <label class="check"><input name="active" type="checkbox" checked> Active</label>
+        <button type="submit" class="primary">Save</button>
+        <button type="button" id="employee-cancel" hidden>Cancel</button>
+      </form>
+      <table id="employees-table">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th>Rate</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Time entries -->
+    <section id="tab-entries" class="panel" hidden>
+      <h2>Time Entries</h2>
+      <form id="entry-form" class="row-form">
+        <input type="hidden" name="id">
+        <select name="employee_id" required></select>
+        <input name="clock_in" type="datetime-local" required title="Clock in">
+        <input name="clock_out" type="datetime-local" title="Clock out">
+        <input name="break_minutes" type="number" min="0" step="1" placeholder="Break (min)">
+        <input name="notes" placeholder="Notes">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" id="entry-cancel" hidden>Cancel</button>
+      </form>
+      <div class="filters">
+        <select id="entries-filter-employee"><option value="">All employees</option></select>
+        <input id="entries-filter-from" type="date"> –
+        <input id="entries-filter-to" type="date">
+        <button id="entries-filter-apply">Filter</button>
+      </div>
+      <table id="entries-table">
+        <thead>
+          <tr><th>Employee</th><th>Date</th><th>In</th><th>Out</th><th>Break</th><th>Hours</th><th>Notes</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Reports -->
+    <section id="tab-reports" class="panel" hidden>
+      <h2>Reports</h2>
+      <div class="filters">
+        <input id="report-from" type="date"> –
+        <input id="report-to" type="date">
+        <button id="report-run" class="primary">Run report</button>
+        <button id="report-week">This week</button>
+        <button id="report-month">This month</button>
+        <a id="report-csv" href="#" download hidden>Download CSV</a>
+      </div>
+      <table id="report-table">
+        <thead>
+          <tr><th>Employee</th><th>Total hours</th><th>Days</th><th>Entries</th><th>Rate</th><th>Pay</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
