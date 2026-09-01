@@ -81,6 +81,19 @@ const translations = {
     managerLabel: 'Manager',
     pinSet: 'Set',
     pinNotSet: 'Not set',
+    tabMonthly: 'Monthly report',
+    generate: 'Generate',
+    print: 'Print',
+    monthlyTitle: (from, to) => `Hours report for ${from} - ${to}`,
+    thDay: 'Day',
+    thGross: 'Total',
+    thNet: 'Net',
+    thRegular: 'Regular hours',
+    totalDays: 'Total days',
+    employeeSignature: 'Employee signature',
+    managerSignature: 'Manager signature',
+    pickEmployeeFirst: 'Choose an employee and a month',
+    weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
   },
   he: {
     appTitle: 'שעות עבודה',
@@ -157,6 +170,19 @@ const translations = {
     managerLabel: 'מנהל',
     pinSet: 'מוגדר',
     pinNotSet: 'לא מוגדר',
+    tabMonthly: 'דוח חודשי',
+    generate: 'הפקה',
+    print: 'הדפסה',
+    monthlyTitle: (from, to) => `דוח פיצול שעות ל- ${from} - ${to}`,
+    thDay: 'יום',
+    thGross: 'סה"כ',
+    thNet: 'נטו',
+    thRegular: 'שעות רגילות',
+    totalDays: 'סה"כ ימים',
+    employeeSignature: 'חתימת העובד',
+    managerSignature: 'חתימת המנהל',
+    pickEmployeeFirst: 'בחרו עובד וחודש',
+    weekdays: ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'שב'],
   },
 };
 
@@ -247,6 +273,9 @@ function applyAuthUI() {
   $('[data-tab="employees"]').hidden = isWorker();
   $('#entry-form [name="employee_id"]').hidden = isWorker();
   $('#entries-filter-employee').hidden = isWorker();
+  $('#monthly-employee').hidden = isWorker();
+  $('#monthly-report').hidden = true;
+  $('#monthly-print').hidden = true;
   currentTab = 'dashboard';
   $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'dashboard'));
   $$('.panel:not(.login-panel)').forEach((p) => (p.hidden = p.id !== 'tab-dashboard'));
@@ -725,6 +754,131 @@ $('#report-csv').onclick = async () => {
   }
 };
 
+// ---------- monthly timesheet ----------
+
+function fmtMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function fmtDayCell(dateStr, weekday) {
+  const [, month, day] = dateStr.split('-');
+  return `${Number(day)}/${Number(month)} ${t('weekdays')[weekday]}`;
+}
+
+async function loadMonthlyControls() {
+  const select = $('#monthly-employee');
+  if (!isWorker()) {
+    const employees = await api('/api/employees');
+    const prev = select.value;
+    select.replaceChildren(el('option', { value: '' }, t('selectEmployee')));
+    for (const emp of employees) select.append(el('option', { value: emp.id }, emp.name));
+    select.value = prev;
+  }
+  if (!$('#monthly-month').value) {
+    const now = new Date();
+    $('#monthly-month').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+}
+
+async function runMonthlyReport() {
+  const month = $('#monthly-month').value;
+  const employeeId = isWorker() ? auth.employeeId : $('#monthly-employee').value;
+  if (!month || !employeeId) {
+    toast(t('pickEmployeeFirst'), true);
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ month });
+    if (!isWorker()) params.set('employee_id', employeeId);
+    renderMonthlyReport(await api(`/api/reports/monthly?${params}`));
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function renderMonthlyReport(report) {
+  const container = $('#monthly-report');
+  container.replaceChildren();
+
+  const fmtDate = (iso) => iso.split('-').reverse().join('/');
+  container.append(
+    el('div', { className: 'ts-title' }, t('monthlyTitle', fmtDate(report.from), fmtDate(report.to))),
+    el('div', { className: 'ts-employee' }, report.employee.name)
+  );
+
+  const table = el('table', { className: 'ts-table' });
+  const headers = [
+    t('thDay'),
+    t('thIn'),
+    t('thOut'),
+    t('thIn'),
+    t('thOut'),
+    t('thGross'),
+    t('thNet'),
+    t('thRegular'),
+  ];
+  const thead = el('thead');
+  const headRow = el('tr');
+  headers.forEach((h) => headRow.append(el('th', {}, h)));
+  thead.append(headRow);
+  table.append(thead);
+
+  const tbody = el('tbody');
+  for (const day of report.days) {
+    const isWeekend = day.weekday === 5 || day.weekday === 6;
+    const tr = el('tr', { className: isWeekend ? 'ts-weekend' : '' });
+    tr.append(el('td', { className: 'ts-day' }, fmtDayCell(day.date, day.weekday)));
+    // Two shift columns, as in the payroll report; extra shifts fold into the totals.
+    for (let i = 0; i < 2; i++) {
+      const shift = day.shifts[i];
+      tr.append(
+        el('td', {}, shift ? fmtTime(shift.clock_in) : ''),
+        el('td', {}, shift && shift.clock_out ? fmtTime(shift.clock_out) : '')
+      );
+    }
+    const worked = day.gross_minutes > 0;
+    tr.append(
+      el('td', {}, worked ? fmtMinutes(day.gross_minutes) : ''),
+      el('td', {}, worked ? fmtMinutes(day.net_minutes) : ''),
+      el('td', {}, worked ? fmtMinutes(day.net_minutes) : '')
+    );
+    tbody.append(tr);
+  }
+  table.append(tbody);
+
+  const tfoot = el('tfoot');
+  const footRow = el('tr');
+  footRow.append(el('th', { colSpan: 5 }, t('total')));
+  footRow.append(
+    el('th', {}, fmtMinutes(report.totals.gross_minutes)),
+    el('th', {}, fmtMinutes(report.totals.net_minutes)),
+    el('th', {}, fmtMinutes(report.totals.net_minutes))
+  );
+  tfoot.append(footRow);
+  table.append(tfoot);
+  container.append(table);
+
+  container.append(
+    el('div', { className: 'ts-summary' }, `${t('totalDays')}: ${report.totals.days_worked}`),
+    (() => {
+      const sig = el('div', { className: 'ts-signatures' });
+      sig.append(
+        el('span', {}, `${t('employeeSignature')} ____________________`),
+        el('span', {}, `${t('managerSignature')} ____________________`)
+      );
+      return sig;
+    })()
+  );
+
+  container.hidden = false;
+  $('#monthly-print').hidden = false;
+}
+
+$('#monthly-run').onclick = runMonthlyReport;
+$('#monthly-print').onclick = () => window.print();
+
 // ---------- init ----------
 
 const refresh = {
@@ -732,6 +886,7 @@ const refresh = {
   employees: loadEmployees,
   entries: loadEntries,
   reports: () => {},
+  monthly: loadMonthlyControls,
 };
 
 applyLanguage();

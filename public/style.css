@@ -200,3 +200,78 @@ td.actions button { padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 #report-csv { align-self: center; color: var(--accent); }
 
 .empty { color: var(--muted); padding: 1rem; }
+
+/* ---------- monthly timesheet ---------- */
+
+.timesheet {
+  background: var(--card);
+  border: 1px solid var(--text);
+  border-radius: 4px;
+  padding: 1rem;
+}
+
+.ts-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: underline;
+  margin-bottom: 0.35rem;
+}
+
+.ts-employee {
+  text-align: center;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.ts-table {
+  border: 1px solid var(--text);
+  border-radius: 0;
+  font-size: 0.85rem;
+}
+
+.ts-table th,
+.ts-table td {
+  border: 1px solid var(--border);
+  text-align: center;
+  padding: 0.2rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-table thead th {
+  border-color: var(--text);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ts-table tbody tr { border-top: none; }
+.ts-table td.ts-day { font-weight: 600; white-space: nowrap; }
+.ts-table tr.ts-weekend { background: var(--bg); color: var(--muted); }
+
+.ts-table tfoot th {
+  border-top: 2px solid var(--text);
+  font-weight: 700;
+  background: var(--bg);
+}
+
+.ts-summary { margin-top: 0.75rem; font-weight: 600; }
+
+.ts-signatures {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media print {
+  header,
+  .no-print,
+  #toast { display: none !important; }
+  body { background: #fff; }
+  main { margin: 0; max-width: none; padding: 0; }
+  .timesheet { border: none; padding: 0; }
+  .ts-table { font-size: 9pt; }
+  .ts-table tr.ts-weekend { background: #f2f2f2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

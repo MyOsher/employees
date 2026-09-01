@@ -14,6 +14,7 @@
       <button class="tab" data-tab="employees" data-i18n="tabEmployees">Employees</button>
       <button class="tab" data-tab="entries" data-i18n="tabEntries">Time Entries</button>
       <button class="tab" data-tab="reports" data-i18n="tabReports">Reports</button>
+      <button class="tab" data-tab="monthly" data-i18n="tabMonthly">Monthly report</button>
     </nav>
     <span class="header-end">
       <span id="user-label" class="user-label"></span>
@@ -116,6 +117,18 @@
         </thead>
         <tbody></tbody>
       </table>
+    </section>
+
+    <!-- Monthly timesheet -->
+    <section id="tab-monthly" class="panel" hidden>
+      <h2 class="no-print" data-i18n="tabMonthly">Monthly report</h2>
+      <div class="filters no-print">
+        <select id="monthly-employee"></select>
+        <input id="monthly-month" type="month">
+        <button id="monthly-run" class="primary" data-i18n="generate">Generate</button>
+        <button id="monthly-print" data-i18n="print" hidden>Print</button>
+      </div>
+      <div id="monthly-report" class="timesheet" hidden></div>
     </section>
   </main>
 

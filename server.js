@@ -399,6 +399,58 @@ async function buildReport(query, auth) {
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
 }
 
+// Per-day timesheet for one employee over one calendar month, laid out like a
+// payroll "hours split" report: every date in the month gets a row, worked or not.
+route('GET', '/api/reports/monthly', async (req, res, params, query) => {
+  const auth = await requireAuth(req);
+  const month = query.get('month') || '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw new HttpError(400, 'month must be YYYY-MM');
+  }
+  const employeeId = auth.role === 'worker' ? auth.employeeId : Number(query.get('employee_id'));
+  if (!Number.isInteger(employeeId) || employeeId <= 0) {
+    throw new HttpError(400, 'employee_id is required');
+  }
+  const emp = await getEmployeeOrThrow(employeeId);
+  const [year, monthNum] = month.split('-').map(Number);
+  const dayCount = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
+  const from = `${month}-01`;
+  const to = `${month}-${String(dayCount).padStart(2, '0')}`;
+
+  const byDate = new Map();
+  for (const entry of await store.listEntries({ employeeId: emp.id, from, to })) {
+    if (!byDate.has(entry.work_date)) byDate.set(entry.work_date, []);
+    byDate.get(entry.work_date).push(entry);
+  }
+
+  const days = [];
+  const totals = { gross_minutes: 0, net_minutes: 0, days_worked: 0 };
+  for (let d = 1; d <= dayCount; d++) {
+    const date = `${month}-${String(d).padStart(2, '0')}`;
+    const shifts = (byDate.get(date) || []).sort((a, b) => a.clock_in.localeCompare(b.clock_in));
+    let gross = 0;
+    let net = 0;
+    for (const shift of shifts) {
+      if (!shift.clock_out) continue;
+      const span = Math.max(0, Math.round((new Date(shift.clock_out) - new Date(shift.clock_in)) / 60000));
+      gross += span;
+      net += Math.max(0, span - shift.break_minutes);
+    }
+    if (net > 0) totals.days_worked += 1;
+    totals.gross_minutes += gross;
+    totals.net_minutes += net;
+    days.push({
+      date,
+      weekday: new Date(`${date}T00:00:00Z`).getUTCDay(),
+      shifts: shifts.map((s) => ({ clock_in: s.clock_in, clock_out: s.clock_out })),
+      gross_minutes: gross,
+      net_minutes: net,
+    });
+  }
+
+  sendJson(res, 200, { employee: { id: emp.id, name: emp.name }, from, to, days, totals });
+});
+
 route('GET', '/api/reports/summary', async (req, res, params, query) => {
   const auth = await requireAuth(req);
   sendJson(res, 200, await buildReport(query, auth));

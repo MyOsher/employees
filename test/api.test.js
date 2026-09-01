@@ -187,6 +187,73 @@ test('summary report and CSV as manager', async () => {
   assert.ok(csv.includes('Carol Mizrahi'));
 });
 
+test('monthly timesheet report', async () => {
+  const emp = (await call('POST', '/api/employees', { name: 'Monthly Moshe', pin: '7070' })).data;
+  const workerAuth = `Bearer worker:${emp.id}:7070`;
+
+  // Two shifts on one day, plus a second day.
+  await call('POST', '/api/entries', {
+    employee_id: emp.id,
+    clock_in: '2026-07-01T06:00:00Z',
+    clock_out: '2026-07-01T10:00:00Z',
+    break_minutes: 30,
+  });
+  await call('POST', '/api/entries', {
+    employee_id: emp.id,
+    clock_in: '2026-07-01T12:00:00Z',
+    clock_out: '2026-07-01T15:00:00Z',
+  });
+  await call('POST', '/api/entries', {
+    employee_id: emp.id,
+    clock_in: '2026-07-02T08:00:00Z',
+    clock_out: '2026-07-02T16:00:00Z',
+    break_minutes: 60,
+  });
+
+  const report = await call('GET', `/api/reports/monthly?employee_id=${emp.id}&month=2026-07`);
+  assert.strictEqual(report.status, 200);
+  assert.strictEqual(report.data.employee.name, 'Monthly Moshe');
+  assert.strictEqual(report.data.from, '2026-07-01');
+  assert.strictEqual(report.data.to, '2026-07-31');
+  assert.strictEqual(report.data.days.length, 31, 'every day of the month gets a row');
+
+  const first = report.data.days[0];
+  assert.strictEqual(first.shifts.length, 2);
+  assert.strictEqual(first.gross_minutes, 7 * 60);
+  assert.strictEqual(first.net_minutes, 7 * 60 - 30);
+  assert.strictEqual(first.weekday, 3, '2026-07-01 is a Wednesday');
+
+  const second = report.data.days[1];
+  assert.strictEqual(second.net_minutes, 7 * 60);
+
+  const empty = report.data.days[5];
+  assert.deepStrictEqual(empty.shifts, []);
+  assert.strictEqual(empty.gross_minutes, 0);
+
+  assert.strictEqual(report.data.totals.days_worked, 2);
+  assert.strictEqual(report.data.totals.net_minutes, 7 * 60 - 30 + 7 * 60);
+
+  // A worker gets their own month and cannot request someone else's.
+  const own = await call('GET', '/api/reports/monthly?month=2026-07', undefined, workerAuth);
+  assert.strictEqual(own.status, 200);
+  assert.strictEqual(own.data.employee.id, emp.id);
+
+  const other = (await call('POST', '/api/employees', { name: 'Someone Else' })).data;
+  const scoped = await call(
+    'GET',
+    `/api/reports/monthly?employee_id=${other.id}&month=2026-07`,
+    undefined,
+    workerAuth
+  );
+  assert.strictEqual(scoped.data.employee.id, emp.id, 'employee_id is ignored for workers');
+
+  const badMonth = await call('GET', `/api/reports/monthly?employee_id=${emp.id}&month=2026-13`);
+  assert.strictEqual(badMonth.status, 400);
+
+  const noAuth = await call('GET', '/api/reports/monthly?month=2026-07', undefined, null);
+  assert.strictEqual(noAuth.status, 401);
+});
+
 test('change manager PIN', async () => {
   const change = await call('POST', '/api/settings/manager-pin', { new_pin: '5555' });
   assert.strictEqual(change.status, 200);
