@@ -24,7 +24,15 @@ function createDb(dbPath = DB_PATH) {
       name        TEXT NOT NULL,
       email       TEXT UNIQUE,
       active      INTEGER NOT NULL DEFAULT 1,
+      pin_hash    TEXT,
+      pin_salt    TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id               INTEGER PRIMARY KEY CHECK (id = 1),
+      manager_pin_hash TEXT NOT NULL,
+      manager_pin_salt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS time_entries (
@@ -41,6 +49,16 @@ function createDb(dbPath = DB_PATH) {
     CREATE INDEX IF NOT EXISTS idx_entries_employee_date
       ON time_entries (employee_id, work_date);
   `);
+  // Seed the default manager PIN (0000) on first run; the manager
+  // changes it from the app.
+  const hasSettings = db.prepare('SELECT id FROM app_settings WHERE id = 1').get();
+  if (!hasSettings) {
+    const { makePinHash } = require('./auth');
+    const { hash, salt } = makePinHash('0000');
+    db.prepare(
+      'INSERT INTO app_settings (id, manager_pin_hash, manager_pin_salt) VALUES (1, ?, ?)'
+    ).run(hash, salt);
+  }
   return db;
 }
 

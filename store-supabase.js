@@ -46,28 +46,70 @@ function flattenEntry(row) {
 
 // --- employees ---
 
+// Public employee reads never include the PIN columns.
+const EMP_COLS = 'id,name,email,active,created_at,pin_hash';
+
+function publicEmployee(row) {
+  if (!row) return null;
+  const { pin_hash, ...emp } = row;
+  emp.has_pin = pin_hash != null;
+  return emp;
+}
+
 async function listEmployees(activeOnly) {
-  let path = 'employees?select=*&order=name.asc';
+  let path = `employees?select=${EMP_COLS}&order=name.asc`;
   if (activeOnly) path += '&active=is.true';
-  return rest(path);
+  return (await rest(path)).map(publicEmployee);
 }
 
 async function getEmployee(id) {
-  return one(await rest(`employees?select=*&id=eq.${id}`));
+  return publicEmployee(one(await rest(`employees?select=${EMP_COLS}&id=eq.${id}`)));
 }
 
-async function createEmployee(fields) {
-  return one(await rest('employees', { method: 'POST', body: fields, prefer: 'return=representation' }));
+async function getEmployeeSecret(id) {
+  return one(await rest(`employees?select=id,active,pin_hash,pin_salt&id=eq.${id}`));
 }
 
-async function updateEmployee(id, { name, email, active }) {
-  return one(
-    await rest(`employees?id=eq.${id}`, {
-      method: 'PATCH',
-      body: { name, email, active: !!active },
-      prefer: 'return=representation',
-    })
+async function createEmployee({ name, email, pin_hash = null, pin_salt = null }) {
+  return publicEmployee(
+    one(
+      await rest('employees', {
+        method: 'POST',
+        body: { name, email, pin_hash, pin_salt },
+        prefer: 'return=representation',
+      })
+    )
   );
+}
+
+async function updateEmployee(id, { name, email, active, pin_hash, pin_salt }) {
+  const body = { name, email, active: !!active };
+  if (pin_hash !== undefined) {
+    body.pin_hash = pin_hash;
+    body.pin_salt = pin_salt;
+  }
+  return publicEmployee(
+    one(
+      await rest(`employees?id=eq.${id}`, {
+        method: 'PATCH',
+        body,
+        prefer: 'return=representation',
+      })
+    )
+  );
+}
+
+// --- settings ---
+
+async function getSettings() {
+  return one(await rest('app_settings?select=*&id=eq.1'));
+}
+
+async function setManagerPin(hash, salt) {
+  await rest('app_settings?id=eq.1', {
+    method: 'PATCH',
+    body: { manager_pin_hash: hash, manager_pin_salt: salt },
+  });
 }
 
 async function deleteEmployee(id) {
@@ -124,9 +166,12 @@ async function completedEntries(from, to) {
 module.exports = {
   listEmployees,
   getEmployee,
+  getEmployeeSecret,
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  getSettings,
+  setManagerPin,
   getEntry,
   getOpenEntry,
   listEntries,

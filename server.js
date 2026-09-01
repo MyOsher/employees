@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const store = require('./store');
 const { HttpError } = require('./errors');
+const { makePinHash, pinMatches, validatePinFormat, parseAuthHeader } = require('./auth');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -88,6 +89,44 @@ function validateEntryTimes(clockIn, clockOut, breakMinutes) {
   }
 }
 
+// ---------- authentication ----------
+
+// Credentials are verified against the database on every request; there is
+// no server-side session state.
+async function authenticate(req) {
+  const cred = parseAuthHeader(req);
+  if (!cred) return null;
+  if (cred.role === 'manager') {
+    const settings = await store.getSettings();
+    if (settings && pinMatches(cred.pin, settings.manager_pin_hash, settings.manager_pin_salt)) {
+      return { role: 'manager' };
+    }
+    return null;
+  }
+  if (!Number.isInteger(cred.employeeId)) return null;
+  const emp = await store.getEmployeeSecret(cred.employeeId);
+  if (emp && emp.active && emp.pin_hash && pinMatches(cred.pin, emp.pin_hash, emp.pin_salt)) {
+    return { role: 'worker', employeeId: emp.id };
+  }
+  return null;
+}
+
+async function requireAuth(req) {
+  const auth = await authenticate(req);
+  if (!auth) throw new HttpError(401, 'Authentication required');
+  return auth;
+}
+
+function requireManager(auth) {
+  if (auth.role !== 'manager') throw new HttpError(403, 'Manager access required');
+}
+
+function requireSelfOrManager(auth, employeeId) {
+  if (auth.role !== 'manager' && auth.employeeId !== Number(employeeId)) {
+    throw new HttpError(403, 'Access limited to your own records');
+  }
+}
+
 // ---------- route handlers ----------
 
 const routes = [];
@@ -103,22 +142,73 @@ function route(method, pattern, handler) {
   routes.push({ method, regex, names, handler });
 }
 
+// --- login ---
+
+// Names only, for the login screen's worker picker.
+route('GET', '/api/login/employees', async (req, res) => {
+  const employees = await store.listEmployees(true);
+  sendJson(res, 200, employees.map(({ id, name, has_pin }) => ({ id, name, has_pin: !!has_pin })));
+});
+
+route('POST', '/api/login', async (req, res) => {
+  const body = await readBody(req);
+  const fakeReq = {
+    headers: {
+      authorization:
+        body.role === 'manager'
+          ? `Bearer manager:${body.pin}`
+          : `Bearer worker:${body.employee_id}:${body.pin}`,
+    },
+  };
+  const auth = await authenticate(fakeReq);
+  if (!auth) throw new HttpError(401, 'Wrong PIN');
+  if (auth.role === 'worker') {
+    const emp = await getEmployeeOrThrow(auth.employeeId);
+    return sendJson(res, 200, { role: 'worker', employee: { id: emp.id, name: emp.name } });
+  }
+  sendJson(res, 200, { role: 'manager' });
+});
+
+route('POST', '/api/settings/manager-pin', async (req, res) => {
+  const auth = await requireAuth(req);
+  requireManager(auth);
+  const body = await readBody(req);
+  validatePinFormat(body.new_pin);
+  const { hash, salt } = makePinHash(String(body.new_pin));
+  await store.setManagerPin(hash, salt);
+  sendJson(res, 200, { ok: true });
+});
+
 // --- employees ---
 
 route('GET', '/api/employees', async (req, res, params, query) => {
+  const auth = await requireAuth(req);
+  if (auth.role === 'worker') {
+    return sendJson(res, 200, [await getEmployeeOrThrow(auth.employeeId)]);
+  }
   sendJson(res, 200, await store.listEmployees(query.get('active') === 'true'));
 });
 
 route('POST', '/api/employees', async (req, res) => {
+  const auth = await requireAuth(req);
+  requireManager(auth);
   const body = await readBody(req);
   const name = String(body.name || '').trim();
   if (!name) throw new HttpError(400, 'name is required');
   const email = body.email ? String(body.email).trim() : null;
-  const emp = await store.createEmployee({ name, email });
-  sendJson(res, 201, emp);
+  const fields = { name, email };
+  if (body.pin) {
+    validatePinFormat(body.pin);
+    const { hash, salt } = makePinHash(String(body.pin));
+    fields.pin_hash = hash;
+    fields.pin_salt = salt;
+  }
+  sendJson(res, 201, await store.createEmployee(fields));
 });
 
 route('PUT', '/api/employees/:id', async (req, res, params) => {
+  const auth = await requireAuth(req);
+  requireManager(auth);
   const emp = await getEmployeeOrThrow(params.id);
   const body = await readBody(req);
   const name = body.name !== undefined ? String(body.name).trim() : emp.name;
@@ -126,11 +216,19 @@ route('PUT', '/api/employees/:id', async (req, res, params) => {
   const email =
     body.email !== undefined ? (body.email ? String(body.email).trim() : null) : emp.email;
   const active = body.active !== undefined ? !!body.active : !!emp.active;
-  const updated = await store.updateEmployee(emp.id, { name, email, active });
-  sendJson(res, 200, updated);
+  const fields = { name, email, active };
+  if (body.pin) {
+    validatePinFormat(body.pin);
+    const { hash, salt } = makePinHash(String(body.pin));
+    fields.pin_hash = hash;
+    fields.pin_salt = salt;
+  }
+  sendJson(res, 200, await store.updateEmployee(emp.id, fields));
 });
 
 route('DELETE', '/api/employees/:id', async (req, res, params) => {
+  const auth = await requireAuth(req);
+  requireManager(auth);
   await getEmployeeOrThrow(params.id);
   await store.deleteEmployee(params.id);
   sendJson(res, 200, { ok: true });
@@ -139,6 +237,8 @@ route('DELETE', '/api/employees/:id', async (req, res, params) => {
 // --- clock in / out ---
 
 route('POST', '/api/employees/:id/clock-in', async (req, res, params) => {
+  const auth = await requireAuth(req);
+  requireSelfOrManager(auth, params.id);
   const emp = await getEmployeeOrThrow(params.id);
   if (!emp.active) throw new HttpError(400, 'Employee is inactive');
   if (await store.getOpenEntry(emp.id)) {
@@ -157,6 +257,8 @@ route('POST', '/api/employees/:id/clock-in', async (req, res, params) => {
 });
 
 route('POST', '/api/employees/:id/clock-out', async (req, res, params) => {
+  const auth = await requireAuth(req);
+  requireSelfOrManager(auth, params.id);
   const emp = await getEmployeeOrThrow(params.id);
   const open = await store.getOpenEntry(emp.id);
   if (!open) throw new HttpError(409, 'Employee is not clocked in');
@@ -176,10 +278,12 @@ route('POST', '/api/employees/:id/clock-out', async (req, res, params) => {
 
 // --- time entries ---
 
-route('GET', '/api/entries', (req, res, params, query) => {
+route('GET', '/api/entries', async (req, res, params, query) => {
+  const auth = await requireAuth(req);
   const filters = {};
   const empId = query.get('employee_id');
   if (empId) filters.employeeId = Number(empId);
+  if (auth.role === 'worker') filters.employeeId = auth.employeeId;
   const from = query.get('from');
   if (from) {
     if (!DATE_RE.test(from)) throw new HttpError(400, 'from must be YYYY-MM-DD');
@@ -191,12 +295,18 @@ route('GET', '/api/entries', (req, res, params, query) => {
     filters.to = to;
   }
   if (query.get('open') === 'true') filters.open = true;
-  return store.listEntries(filters).then((rows) => sendJson(res, 200, rows.map(withHours)));
+  const rows = await store.listEntries(filters);
+  sendJson(res, 200, rows.map(withHours));
 });
 
 route('POST', '/api/entries', async (req, res) => {
+  const auth = await requireAuth(req);
   const body = await readBody(req);
-  const emp = await getEmployeeOrThrow(Number(body.employee_id));
+  const employeeId = auth.role === 'worker' ? auth.employeeId : Number(body.employee_id);
+  if (auth.role === 'worker' && body.employee_id && Number(body.employee_id) !== auth.employeeId) {
+    throw new HttpError(403, 'Access limited to your own records');
+  }
+  const emp = await getEmployeeOrThrow(employeeId);
   const clockIn = parseIsoOrThrow(body.clock_in, 'clock_in');
   const clockOut = body.clock_out ? parseIsoOrThrow(body.clock_out, 'clock_out') : null;
   const breakMinutes = body.break_minutes === undefined ? 0 : body.break_minutes;
@@ -215,7 +325,9 @@ route('POST', '/api/entries', async (req, res) => {
 });
 
 route('PUT', '/api/entries/:id', async (req, res, params) => {
+  const auth = await requireAuth(req);
   const entry = await getEntryOrThrow(params.id);
+  requireSelfOrManager(auth, entry.employee_id);
   const body = await readBody(req);
   const clockIn = body.clock_in !== undefined ? parseIsoOrThrow(body.clock_in, 'clock_in') : entry.clock_in;
   const clockOut =
@@ -245,20 +357,25 @@ route('PUT', '/api/entries/:id', async (req, res, params) => {
 });
 
 route('DELETE', '/api/entries/:id', async (req, res, params) => {
-  await getEntryOrThrow(params.id);
+  const auth = await requireAuth(req);
+  const entry = await getEntryOrThrow(params.id);
+  requireSelfOrManager(auth, entry.employee_id);
   await store.deleteEntry(params.id);
   sendJson(res, 200, { ok: true });
 });
 
 // --- reports ---
 
-async function buildReport(query) {
+async function buildReport(query, auth) {
   const from = query.get('from');
   const to = query.get('to');
   if (!from || !DATE_RE.test(from) || !to || !DATE_RE.test(to)) {
     throw new HttpError(400, 'from and to (YYYY-MM-DD) are required');
   }
-  const rows = await store.completedEntries(from, to);
+  let rows = await store.completedEntries(from, to);
+  if (auth.role === 'worker') {
+    rows = rows.filter((row) => row.employee_id === auth.employeeId);
+  }
   const byEmployee = new Map();
   for (const row of rows) {
     const hours = entryHours(row);
@@ -283,11 +400,13 @@ async function buildReport(query) {
 }
 
 route('GET', '/api/reports/summary', async (req, res, params, query) => {
-  sendJson(res, 200, await buildReport(query));
+  const auth = await requireAuth(req);
+  sendJson(res, 200, await buildReport(query, auth));
 });
 
 route('GET', '/api/reports/summary.csv', async (req, res, params, query) => {
-  const report = await buildReport(query);
+  const auth = await requireAuth(req);
+  const report = await buildReport(query, auth);
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const lines = ['Employee,Total Hours,Days Worked,Entries'];
   for (const r of report) {

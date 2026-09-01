@@ -12,29 +12,36 @@ function mapConflict(err) {
   return err;
 }
 
+// Public employee reads never include the PIN columns.
+const EMP_COLS = 'id, name, email, active, created_at, (pin_hash IS NOT NULL) AS has_pin';
+
 function listEmployees(activeOnly) {
-  let sql = 'SELECT * FROM employees';
+  let sql = `SELECT ${EMP_COLS} FROM employees`;
   if (activeOnly) sql += ' WHERE active = 1';
   sql += ' ORDER BY name COLLATE NOCASE';
   return db.prepare(sql).all();
 }
 
 function getEmployee(id) {
-  return db.prepare('SELECT * FROM employees WHERE id = ?').get(id) || null;
+  return db.prepare(`SELECT ${EMP_COLS} FROM employees WHERE id = ?`).get(id) || null;
 }
 
-function createEmployee({ name, email }) {
+function getEmployeeSecret(id) {
+  return db.prepare('SELECT id, active, pin_hash, pin_salt FROM employees WHERE id = ?').get(id) || null;
+}
+
+function createEmployee({ name, email, pin_hash = null, pin_salt = null }) {
   try {
     const info = db
-      .prepare('INSERT INTO employees (name, email) VALUES (?, ?)')
-      .run(name, email);
+      .prepare('INSERT INTO employees (name, email, pin_hash, pin_salt) VALUES (?, ?, ?, ?)')
+      .run(name, email, pin_hash, pin_salt);
     return getEmployee(info.lastInsertRowid);
   } catch (err) {
     throw mapConflict(err);
   }
 }
 
-function updateEmployee(id, { name, email, active }) {
+function updateEmployee(id, { name, email, active, pin_hash, pin_salt }) {
   try {
     db.prepare('UPDATE employees SET name = ?, email = ?, active = ? WHERE id = ?').run(
       name,
@@ -42,10 +49,28 @@ function updateEmployee(id, { name, email, active }) {
       active ? 1 : 0,
       id
     );
+    if (pin_hash !== undefined) {
+      db.prepare('UPDATE employees SET pin_hash = ?, pin_salt = ? WHERE id = ?').run(
+        pin_hash,
+        pin_salt,
+        id
+      );
+    }
   } catch (err) {
     throw mapConflict(err);
   }
   return getEmployee(id);
+}
+
+function getSettings() {
+  return db.prepare('SELECT * FROM app_settings WHERE id = 1').get() || null;
+}
+
+function setManagerPin(hash, salt) {
+  db.prepare('UPDATE app_settings SET manager_pin_hash = ?, manager_pin_salt = ? WHERE id = 1').run(
+    hash,
+    salt
+  );
 }
 
 function deleteEmployee(id) {
@@ -141,5 +166,8 @@ module.exports = Object.fromEntries(
     updateEntry,
     deleteEntry,
     completedEntries,
+    getEmployeeSecret,
+    getSettings,
+    setManagerPin,
   }).map(([name, fn]) => [name, asyncify(fn)])
 );

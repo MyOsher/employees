@@ -22,6 +22,7 @@ const translations = {
     thName: 'Name',
     thEmail: 'Email',
     thStatus: 'Status',
+    thPin: 'PIN',
     thEmployee: 'Employee',
     thDate: 'Date',
     thIn: 'In',
@@ -64,6 +65,22 @@ const translations = {
     entryAdded: 'Entry added',
     entryUpdated: 'Entry updated',
     entryDeleted: 'Entry deleted',
+    loginTitle: 'Sign in',
+    roleWorker: 'Worker',
+    roleManager: 'Manager',
+    pinPlaceholder: 'PIN code',
+    loginBtn: 'Sign in',
+    logout: 'Log out',
+    wrongPin: 'Wrong PIN',
+    chooseWorker: 'Choose your name…',
+    noPinSuffix: '(no PIN — ask the manager)',
+    workerPin: 'Worker PIN (4-8 digits)',
+    changeManagerPin: 'Change manager PIN',
+    promptNewManagerPin: 'New manager PIN (4-8 digits):',
+    pinUpdated: 'Manager PIN updated',
+    managerLabel: 'Manager',
+    pinSet: 'Set',
+    pinNotSet: 'Not set',
   },
   he: {
     appTitle: 'שעות עבודה',
@@ -81,6 +98,7 @@ const translations = {
     thName: 'שם',
     thEmail: 'אימייל',
     thStatus: 'סטטוס',
+    thPin: 'קוד',
     thEmployee: 'עובד',
     thDate: 'תאריך',
     thIn: 'כניסה',
@@ -123,6 +141,22 @@ const translations = {
     entryAdded: 'הדיווח נוסף',
     entryUpdated: 'הדיווח עודכן',
     entryDeleted: 'הדיווח נמחק',
+    loginTitle: 'כניסה למערכת',
+    roleWorker: 'עובד',
+    roleManager: 'מנהל',
+    pinPlaceholder: 'קוד PIN',
+    loginBtn: 'כניסה',
+    logout: 'יציאה',
+    wrongPin: 'קוד שגוי',
+    chooseWorker: 'בחרו את השם שלכם…',
+    noPinSuffix: '(אין קוד — פנו למנהל)',
+    workerPin: 'קוד PIN לעובד (4-8 ספרות)',
+    changeManagerPin: 'שינוי קוד מנהל',
+    promptNewManagerPin: 'קוד מנהל חדש (4-8 ספרות):',
+    pinUpdated: 'קוד המנהל עודכן',
+    managerLabel: 'מנהל',
+    pinSet: 'מוגדר',
+    pinNotSet: 'לא מוגדר',
   },
 };
 
@@ -150,7 +184,12 @@ function applyLanguage() {
   $$('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n)));
   $$('[data-i18n-placeholder]').forEach((el) => (el.placeholder = t(el.dataset.i18nPlaceholder)));
   $('#lang-toggle').textContent = lang === 'he' ? 'English' : 'עברית';
-  refresh[currentTab]?.();
+  updateUserLabel();
+  if (auth) {
+    refresh[currentTab]?.();
+  } else {
+    renderLoginEmployees();
+  }
 }
 
 $('#lang-toggle').addEventListener('click', () => {
@@ -161,17 +200,139 @@ $('#lang-toggle').addEventListener('click', () => {
   applyLanguage();
 });
 
+// ---------- auth state ----------
+
+let auth = null;
+try {
+  const saved = JSON.parse(localStorage.getItem('auth'));
+  if (saved && (saved.role === 'manager' || saved.role === 'worker')) auth = saved;
+} catch {}
+
+function authHeader() {
+  if (!auth) return null;
+  return auth.role === 'manager'
+    ? `Bearer manager:${auth.pin}`
+    : `Bearer worker:${auth.employeeId}:${auth.pin}`;
+}
+
+function setAuth(next) {
+  auth = next;
+  try {
+    if (next) localStorage.setItem('auth', JSON.stringify(next));
+    else localStorage.removeItem('auth');
+  } catch {}
+  applyAuthUI();
+}
+
+function updateUserLabel() {
+  const label = $('#user-label');
+  if (!auth) label.textContent = '';
+  else label.textContent = auth.role === 'manager' ? t('managerLabel') : auth.name;
+}
+
+const isWorker = () => auth && auth.role === 'worker';
+
+function applyAuthUI() {
+  const loggedIn = !!auth;
+  $('header nav').hidden = !loggedIn;
+  $('#logout-btn').hidden = !loggedIn;
+  $('#login-screen').hidden = loggedIn;
+  updateUserLabel();
+  if (!loggedIn) {
+    $$('.panel:not(.login-panel)').forEach((p) => (p.hidden = true));
+    renderLoginEmployees();
+    return;
+  }
+  // Workers manage only themselves: no Employees tab, no employee pickers.
+  $('[data-tab="employees"]').hidden = isWorker();
+  $('#entry-form [name="employee_id"]').hidden = isWorker();
+  $('#entries-filter-employee').hidden = isWorker();
+  currentTab = 'dashboard';
+  $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'dashboard'));
+  $$('.panel:not(.login-panel)').forEach((p) => (p.hidden = p.id !== 'tab-dashboard'));
+  loadDashboard();
+}
+
 // ---------- api ----------
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const header = authHeader();
+  if (header) headers.Authorization = header;
+  const res = await fetch(path, { ...options, headers });
+  if (res.status === 401 && auth && !path.startsWith('/api/login')) {
+    setAuth(null);
+    throw new Error(t('wrongPin'));
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
+
+// ---------- login ----------
+
+let loginRole = 'worker';
+let loginEmployees = [];
+
+function renderLoginRole() {
+  $('#login-role-worker').classList.toggle('active', loginRole === 'worker');
+  $('#login-role-manager').classList.toggle('active', loginRole === 'manager');
+  $('#login-employee').hidden = loginRole !== 'worker';
+}
+
+async function renderLoginEmployees() {
+  renderLoginRole();
+  const select = $('#login-employee');
+  try {
+    loginEmployees = await api('/api/login/employees');
+  } catch {
+    loginEmployees = [];
+  }
+  const prev = select.value;
+  select.replaceChildren(el('option', { value: '' }, t('chooseWorker')));
+  for (const emp of loginEmployees) {
+    const label = emp.has_pin ? emp.name : `${emp.name} ${t('noPinSuffix')}`;
+    select.append(el('option', { value: emp.id, disabled: !emp.has_pin }, label));
+  }
+  select.value = prev;
+}
+
+$('#login-role-worker').onclick = () => {
+  loginRole = 'worker';
+  renderLoginRole();
+};
+$('#login-role-manager').onclick = () => {
+  loginRole = 'manager';
+  renderLoginRole();
+};
+
+async function doLogin() {
+  const pin = $('#login-pin').value.trim();
+  const employeeId = Number($('#login-employee').value);
+  if (!pin || (loginRole === 'worker' && !employeeId)) return;
+  try {
+    const body =
+      loginRole === 'manager'
+        ? { role: 'manager', pin }
+        : { role: 'worker', employee_id: employeeId, pin };
+    const result = await api('/api/login', { method: 'POST', body: JSON.stringify(body) });
+    $('#login-pin').value = '';
+    if (result.role === 'manager') {
+      setAuth({ role: 'manager', pin });
+    } else {
+      setAuth({ role: 'worker', pin, employeeId: result.employee.id, name: result.employee.name });
+    }
+  } catch (err) {
+    toast(err.message === 'Wrong PIN' ? t('wrongPin') : err.message, true);
+  }
+}
+
+$('#login-submit').onclick = doLogin;
+$('#login-pin').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+
+$('#logout-btn').onclick = () => setAuth(null);
 
 // ---------- toast ----------
 
@@ -215,7 +376,7 @@ $$('.tab').forEach((btn) =>
   btn.addEventListener('click', () => {
     currentTab = btn.dataset.tab;
     $$('.tab').forEach((b) => b.classList.toggle('active', b === btn));
-    $$('.panel').forEach((p) => (p.hidden = p.id !== `tab-${currentTab}`));
+    $$('.panel:not(.login-panel)').forEach((p) => (p.hidden = p.id !== `tab-${currentTab}`));
     refresh[currentTab]?.();
   })
 );
@@ -235,6 +396,7 @@ async function loadDashboard() {
     return;
   }
   for (const emp of employees) {
+    if (!emp.active) continue;
     const open = openByEmp.get(emp.id);
     const card = el('div', { className: 'card' });
     card.append(el('div', { className: 'name' }, emp.name));
@@ -268,7 +430,7 @@ async function loadDashboard() {
   }
 }
 
-// ---------- employees ----------
+// ---------- employees (manager only) ----------
 
 const employeeForm = $('#employee-form');
 
@@ -278,7 +440,11 @@ async function loadEmployees() {
   tbody.replaceChildren();
   for (const emp of employees) {
     const tr = el('tr');
-    tr.append(el('td', {}, emp.name), el('td', {}, emp.email || '—'));
+    tr.append(
+      el('td', {}, emp.name),
+      el('td', {}, emp.email || '—'),
+      el('td', {}, emp.has_pin ? t('pinSet') : t('pinNotSet'))
+    );
     const status = el('td');
     status.append(
       el('span', { className: `badge ${emp.active ? 'on' : 'off'}` }, emp.active ? t('active') : t('inactive'))
@@ -290,6 +456,7 @@ async function loadEmployees() {
       employeeForm.id.value = emp.id;
       employeeForm.name.value = emp.name;
       employeeForm.email.value = emp.email || '';
+      employeeForm.pin.value = '';
       employeeForm.active.checked = !!emp.active;
       $('#employee-cancel').hidden = false;
       employeeForm.scrollIntoView({ behavior: 'smooth' });
@@ -329,6 +496,7 @@ employeeForm.addEventListener('submit', async (e) => {
     email: employeeForm.email.value || null,
     active: employeeForm.active.checked,
   };
+  if (employeeForm.pin.value.trim()) payload.pin = employeeForm.pin.value.trim();
   try {
     await api(id ? `/api/employees/${id}` : '/api/employees', {
       method: id ? 'PUT' : 'POST',
@@ -341,6 +509,21 @@ employeeForm.addEventListener('submit', async (e) => {
     toast(err.message, true);
   }
 });
+
+$('#change-manager-pin').onclick = async () => {
+  const newPin = prompt(t('promptNewManagerPin'));
+  if (!newPin) return;
+  try {
+    await api('/api/settings/manager-pin', {
+      method: 'POST',
+      body: JSON.stringify({ new_pin: newPin.trim() }),
+    });
+    setAuth({ ...auth, pin: newPin.trim() });
+    toast(t('pinUpdated'));
+  } catch (err) {
+    toast(err.message, true);
+  }
+};
 
 function fillEmployeeSelects(employees) {
   const formSelect = $('#entry-form [name="employee_id"]');
@@ -438,7 +621,7 @@ entryForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = entryForm.id.value;
   const payload = {
-    employee_id: Number(entryForm.employee_id.value),
+    employee_id: isWorker() ? auth.employeeId : Number(entryForm.employee_id.value),
     clock_in: entryForm.clock_in.value ? new Date(entryForm.clock_in.value).toISOString() : null,
     clock_out: entryForm.clock_out.value ? new Date(entryForm.clock_out.value).toISOString() : null,
     break_minutes: Number(entryForm.break_minutes.value) || 0,
@@ -514,13 +697,33 @@ async function runReport() {
       tr.append(el('td', { colSpan: 4, className: 'empty' }, t('noCompleted')));
       tbody.append(tr);
     }
-    const csv = $('#report-csv');
-    csv.href = `/api/reports/summary.csv?from=${from}&to=${to}`;
-    csv.hidden = false;
+    $('#report-csv').hidden = false;
   } catch (err) {
     toast(err.message, true);
   }
 }
+
+// CSV needs the auth header, so fetch it and hand the browser a blob.
+$('#report-csv').onclick = async () => {
+  const from = $('#report-from').value;
+  const to = $('#report-to').value;
+  if (!from || !to) return;
+  try {
+    const res = await fetch(`/api/reports/summary.csv?from=${from}&to=${to}`, {
+      headers: { Authorization: authHeader() },
+    });
+    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: 'work-hours-report.csv' });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast(err.message, true);
+  }
+};
 
 // ---------- init ----------
 
@@ -532,4 +735,4 @@ const refresh = {
 };
 
 applyLanguage();
-loadDashboard();
+applyAuthUI();

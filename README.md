@@ -8,7 +8,11 @@ development and tests.
 
 ## Features
 
-- **Employees** – add, edit, deactivate, and delete employees (name, email).
+- **Two access levels** – workers sign in with a personal PIN and see only their
+  own hours; the manager signs in with the manager PIN and sees and manages
+  everything. Enforced server-side on every API request.
+- **Employees** – add, edit, deactivate, and delete employees (name, email,
+  personal PIN) — manager only.
 - **Clock in / out** – one-click clocking from the dashboard, with live "who's in" status.
 - **Manual time entries** – add or correct entries with clock-in/out times, break minutes, and notes.
 - **Filtering** – browse entries by employee and date range.
@@ -43,9 +47,22 @@ The storage backend is selected in `config.js`:
 
 `PORT` overrides the HTTP port.
 
-Note: the app has no login layer, so the API — and therefore the data — is
-writable by anyone who can reach the deployed URL. The Supabase policies
-mirror that same trust level.
+## Authentication
+
+- **Workers** sign in by picking their name and entering the personal PIN the
+  manager set for them. They can clock in/out, add and edit entries, and see
+  reports — for themselves only.
+- **The manager** signs in with the manager PIN (default `0000` — change it
+  right away from the Employees tab). Managers have full access, including
+  employee management and setting worker PINs.
+- Credentials are sent as `Authorization: Bearer manager:<pin>` /
+  `Bearer worker:<id>:<pin>` and verified against salted PIN hashes on every
+  request; PINs are never stored in plain text.
+
+Note: the app's API enforces these roles, but the Supabase REST endpoint
+itself still allows full access with the (public) publishable key. Closing
+that requires locking the Supabase policies and moving the server to the
+secret service-role key via environment variables.
 
 ## Tests
 

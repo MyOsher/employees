@@ -15,11 +15,29 @@
       <button class="tab" data-tab="entries" data-i18n="tabEntries">Time Entries</button>
       <button class="tab" data-tab="reports" data-i18n="tabReports">Reports</button>
     </nav>
-    <button id="lang-toggle" class="lang">עברית</button>
+    <span class="header-end">
+      <span id="user-label" class="user-label"></span>
+      <button id="logout-btn" data-i18n="logout" hidden>Log out</button>
+      <button id="lang-toggle" class="lang">עברית</button>
+    </span>
   </header>
 
   <main>
     <div id="toast" hidden></div>
+
+    <!-- Login -->
+    <section id="login-screen" class="panel login-panel" hidden>
+      <h2 data-i18n="loginTitle">Sign in</h2>
+      <div class="login-box">
+        <div class="role-toggle">
+          <button id="login-role-worker" class="active" data-i18n="roleWorker">Worker</button>
+          <button id="login-role-manager" data-i18n="roleManager">Manager</button>
+        </div>
+        <select id="login-employee"></select>
+        <input id="login-pin" type="password" inputmode="numeric" autocomplete="off" data-i18n-placeholder="pinPlaceholder" placeholder="PIN code">
+        <button id="login-submit" class="primary" data-i18n="loginBtn">Sign in</button>
+      </div>
+    </section>
 
     <!-- Dashboard -->
     <section id="tab-dashboard" class="panel">
@@ -34,16 +52,18 @@
         <input type="hidden" name="id">
         <input name="name" data-i18n-placeholder="fullName" placeholder="Full name" required>
         <input name="email" type="email" data-i18n-placeholder="emailOptional" placeholder="Email (optional)">
+        <input name="pin" inputmode="numeric" autocomplete="off" data-i18n-placeholder="workerPin" placeholder="Worker PIN (4-8 digits)">
         <label class="check"><input name="active" type="checkbox" checked> <span data-i18n="active">Active</span></label>
         <button type="submit" class="primary" data-i18n="save">Save</button>
         <button type="button" id="employee-cancel" data-i18n="cancel" hidden>Cancel</button>
       </form>
       <table id="employees-table">
         <thead>
-          <tr><th data-i18n="thName">Name</th><th data-i18n="thEmail">Email</th><th data-i18n="thStatus">Status</th><th></th></tr>
+          <tr><th data-i18n="thName">Name</th><th data-i18n="thEmail">Email</th><th data-i18n="thPin">PIN</th><th data-i18n="thStatus">Status</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
+      <p><button id="change-manager-pin" data-i18n="changeManagerPin">Change manager PIN</button></p>
     </section>
 
     <!-- Time entries -->
@@ -88,7 +108,7 @@
         <button id="report-run" class="primary" data-i18n="runReport">Run report</button>
         <button id="report-week" data-i18n="thisWeek">This week</button>
         <button id="report-month" data-i18n="thisMonth">This month</button>
-        <a id="report-csv" href="#" download data-i18n="downloadCsv" hidden>Download CSV</a>
+        <button id="report-csv" data-i18n="downloadCsv" hidden>Download CSV</button>
       </div>
       <table id="report-table">
         <thead>
