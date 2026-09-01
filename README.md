@@ -37,6 +37,13 @@ npm test
 
 Runs the API test suite with Node's built-in test runner against an in-memory database.
 
+## Deploying to Vercel
+
+The repo includes a `vercel.json` that runs the whole app as a single serverless
+function. Note that on Vercel the SQLite database lives in `/tmp`, which is
+**ephemeral** — data can disappear between requests and deployments. For real
+production use, point the app at a hosted database instead.
+
 ## API overview
 
 | Method | Path | Description |

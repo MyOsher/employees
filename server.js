@@ -373,7 +373,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     for (const r of routes) {
@@ -397,7 +397,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 500, { error: 'Internal server error' });
     }
   }
-});
+}
+
+const server = http.createServer(handleRequest);
 
 if (require.main === module) {
   server.listen(PORT, () => {
@@ -405,4 +407,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { server, db };
+// Exported as a callable handler so Vercel's Node runtime can invoke it
+// directly, while `server`/`db` keep local `node server.js` and tests working.
+module.exports = handleRequest;
+module.exports.server = server;
+module.exports.db = db;

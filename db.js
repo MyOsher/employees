@@ -3,7 +3,13 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'workhours.db');
+// On Vercel the deployment filesystem is read-only; only /tmp is writable
+// (and ephemeral — use an external database for durable production data).
+const DB_PATH =
+  process.env.DB_PATH ||
+  (process.env.VERCEL
+    ? '/tmp/workhours.db'
+    : path.join(__dirname, 'data', 'workhours.db'));
 
 function createDb(dbPath = DB_PATH) {
   if (dbPath !== ':memory:') {
