@@ -1,5 +1,6 @@
 'use strict';
 
+process.env.STORAGE = 'sqlite';
 process.env.DB_PATH = ':memory:';
 
 const { test, before, after } = require('node:test');

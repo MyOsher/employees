@@ -1,8 +1,10 @@
 # Employee Work Hours
 
 A lightweight application for managing employees and tracking their work hours.
-Built with plain Node.js (no dependencies) using the built-in `node:sqlite` database,
-with a vanilla HTML/CSS/JS single-page frontend.
+Built with plain Node.js (no dependencies), with a vanilla HTML/CSS/JS
+single-page frontend. Data is stored in **Supabase Postgres** by default, with a
+local SQLite fallback (via the built-in `node:sqlite` module) for offline
+development and tests.
 
 ## Features
 
@@ -26,8 +28,24 @@ npm start
 
 Then open http://localhost:3000.
 
-The SQLite database is created automatically at `data/workhours.db`
-(override with the `DB_PATH` environment variable; `PORT` overrides the port).
+## Storage
+
+The storage backend is selected in `config.js`:
+
+- **Supabase Postgres** (default) — used whenever Supabase credentials are
+  available. Defaults for the project's URL and publishable key are committed
+  in `config.js` (the publishable key is public by design); override them with
+  the `SUPABASE_URL` / `SUPABASE_KEY` environment variables. The schema lives
+  in the Supabase project's migration history.
+- **SQLite** — set `STORAGE=sqlite` to store data locally in `data/workhours.db`
+  (override the path with `DB_PATH`). Tests always use this backend with an
+  in-memory database.
+
+`PORT` overrides the HTTP port.
+
+Note: the app has no login layer, so the API — and therefore the data — is
+writable by anyone who can reach the deployed URL. The Supabase policies
+mirror that same trust level.
 
 ## Tests
 
@@ -39,10 +57,9 @@ Runs the API test suite with Node's built-in test runner against an in-memory da
 
 ## Deploying to Vercel
 
-The repo includes a `vercel.json` that runs the whole app as a single serverless
-function. Note that on Vercel the SQLite database lives in `/tmp`, which is
-**ephemeral** — data can disappear between requests and deployments. For real
-production use, point the app at a hosted database instead.
+The repo includes a `vercel.json` that runs the whole app as a single
+serverless function. With the default Supabase backend, data is fully durable —
+nothing is stored on Vercel's ephemeral filesystem.
 
 ## API overview
 
