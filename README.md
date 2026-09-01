@@ -8,11 +8,11 @@ development and tests.
 
 ## Features
 
-- **Employees** – add, edit, deactivate, and delete employees (name, email, role, hourly rate).
+- **Employees** – add, edit, deactivate, and delete employees (name, email).
 - **Clock in / out** – one-click clocking from the dashboard, with live "who's in" status.
 - **Manual time entries** – add or correct entries with clock-in/out times, break minutes, and notes.
 - **Filtering** – browse entries by employee and date range.
-- **Reports** – total hours, days worked, and pay per employee for any date range
+- **Reports** – total hours and days worked per employee for any date range
   (with "this week" / "this month" shortcuts) and CSV export.
 
 ## Requirements
@@ -66,7 +66,7 @@ nothing is stored on Vercel's ephemeral filesystem.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/employees?active=true` | List employees |
-| POST | `/api/employees` | Create employee `{name, email?, role?, hourly_rate?}` |
+| POST | `/api/employees` | Create employee `{name, email?}` |
 | PUT | `/api/employees/:id` | Update employee (partial) |
 | DELETE | `/api/employees/:id` | Delete employee and their entries |
 | POST | `/api/employees/:id/clock-in` | Start a work session |
@@ -75,7 +75,7 @@ nothing is stored on Vercel's ephemeral filesystem.
 | POST | `/api/entries` | Create manual entry `{employee_id, clock_in, clock_out?, break_minutes?, notes?}` |
 | PUT | `/api/entries/:id` | Update entry (partial) |
 | DELETE | `/api/entries/:id` | Delete entry |
-| GET | `/api/reports/summary?from=&to=` | Per-employee totals (hours, days, pay) |
+| GET | `/api/reports/summary?from=&to=` | Per-employee totals (hours, days, entries) |
 | GET | `/api/reports/summary.csv?from=&to=` | Same report as CSV download |
 
 Timestamps are stored in UTC (ISO 8601); dates are `YYYY-MM-DD`.

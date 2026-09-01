@@ -23,8 +23,6 @@ function createDb(dbPath = DB_PATH) {
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL,
       email       TEXT UNIQUE,
-      role        TEXT DEFAULT '',
-      hourly_rate REAL DEFAULT 0,
       active      INTEGER NOT NULL DEFAULT 1,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );

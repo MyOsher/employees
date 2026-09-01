@@ -33,15 +33,13 @@
         <input type="hidden" name="id">
         <input name="name" placeholder="Full name" required>
         <input name="email" type="email" placeholder="Email (optional)">
-        <input name="role" placeholder="Role">
-        <input name="hourly_rate" type="number" step="0.01" min="0" placeholder="Hourly rate">
         <label class="check"><input name="active" type="checkbox" checked> Active</label>
         <button type="submit" class="primary">Save</button>
         <button type="button" id="employee-cancel" hidden>Cancel</button>
       </form>
       <table id="employees-table">
         <thead>
-          <tr><th>Name</th><th>Email</th><th>Role</th><th>Rate</th><th>Status</th><th></th></tr>
+          <tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -93,7 +91,7 @@
       </div>
       <table id="report-table">
         <thead>
-          <tr><th>Employee</th><th>Total hours</th><th>Days</th><th>Entries</th><th>Rate</th><th>Pay</th></tr>
+          <tr><th>Employee</th><th>Total hours</th><th>Days</th><th>Entries</th></tr>
         </thead>
         <tbody></tbody>
       </table>

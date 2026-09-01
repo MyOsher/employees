@@ -23,22 +23,25 @@ function getEmployee(id) {
   return db.prepare('SELECT * FROM employees WHERE id = ?').get(id) || null;
 }
 
-function createEmployee({ name, email, role, hourly_rate }) {
+function createEmployee({ name, email }) {
   try {
     const info = db
-      .prepare('INSERT INTO employees (name, email, role, hourly_rate) VALUES (?, ?, ?, ?)')
-      .run(name, email, role, hourly_rate);
+      .prepare('INSERT INTO employees (name, email) VALUES (?, ?)')
+      .run(name, email);
     return getEmployee(info.lastInsertRowid);
   } catch (err) {
     throw mapConflict(err);
   }
 }
 
-function updateEmployee(id, { name, email, role, hourly_rate, active }) {
+function updateEmployee(id, { name, email, active }) {
   try {
-    db.prepare(
-      'UPDATE employees SET name = ?, email = ?, role = ?, hourly_rate = ?, active = ? WHERE id = ?'
-    ).run(name, email, role, hourly_rate, active ? 1 : 0, id);
+    db.prepare('UPDATE employees SET name = ?, email = ?, active = ? WHERE id = ?').run(
+      name,
+      email,
+      active ? 1 : 0,
+      id
+    );
   } catch (err) {
     throw mapConflict(err);
   }
@@ -113,7 +116,7 @@ function deleteEntry(id) {
 function completedEntries(from, to) {
   return db
     .prepare(
-      `SELECT e.*, emp.name AS employee_name, emp.hourly_rate
+      `SELECT e.*, emp.name AS employee_name
          FROM time_entries e JOIN employees emp ON emp.id = e.employee_id
         WHERE e.work_date >= ? AND e.work_date <= ? AND e.clock_out IS NOT NULL`
     )

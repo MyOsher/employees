@@ -36,14 +36,11 @@ async function rest(path, { method = 'GET', body, prefer } = {}) {
 const one = (rows) => (Array.isArray(rows) && rows.length ? rows[0] : null);
 
 // PostgREST embeds the joined employee as a nested object; flatten it to the
-// employee_name / hourly_rate columns the SQLite store returns.
+// employee_name column the SQLite store returns.
 function flattenEntry(row) {
   if (!row) return null;
   const { employees, ...entry } = row;
-  if (employees) {
-    entry.employee_name = employees.name;
-    if (employees.hourly_rate !== undefined) entry.hourly_rate = employees.hourly_rate;
-  }
+  if (employees) entry.employee_name = employees.name;
   return entry;
 }
 
@@ -63,11 +60,11 @@ async function createEmployee(fields) {
   return one(await rest('employees', { method: 'POST', body: fields, prefer: 'return=representation' }));
 }
 
-async function updateEmployee(id, { name, email, role, hourly_rate, active }) {
+async function updateEmployee(id, { name, email, active }) {
   return one(
     await rest(`employees?id=eq.${id}`, {
       method: 'PATCH',
-      body: { name, email, role, hourly_rate, active: !!active },
+      body: { name, email, active: !!active },
       prefer: 'return=representation',
     })
   );
@@ -119,7 +116,7 @@ async function deleteEntry(id) {
 
 async function completedEntries(from, to) {
   const rows = await rest(
-    `time_entries?select=*,employees(name,hourly_rate)&work_date=gte.${from}&work_date=lte.${to}&clock_out=not.is.null`
+    `time_entries?select=*,employees(name)&work_date=gte.${from}&work_date=lte.${to}&clock_out=not.is.null`
   );
   return rows.map(flattenEntry);
 }

@@ -79,7 +79,6 @@ async function loadDashboard() {
     const open = openByEmp.get(emp.id);
     const card = el('div', { className: 'card' });
     card.append(el('div', { className: 'name' }, emp.name));
-    if (emp.role) card.append(el('div', { className: 'meta' }, emp.role));
     if (open) {
       card.append(el('div', { className: 'since' }, `Clocked in since ${fmtTime(open.clock_in)}`));
       const btn = el('button', { className: 'danger' }, 'Clock out');
@@ -120,12 +119,7 @@ async function loadEmployees() {
   tbody.replaceChildren();
   for (const emp of employees) {
     const tr = el('tr');
-    tr.append(
-      el('td', {}, emp.name),
-      el('td', {}, emp.email || '—'),
-      el('td', {}, emp.role || '—'),
-      el('td', {}, emp.hourly_rate ? emp.hourly_rate.toFixed(2) : '—')
-    );
+    tr.append(el('td', {}, emp.name), el('td', {}, emp.email || '—'));
     const status = el('td');
     status.append(el('span', { className: `badge ${emp.active ? 'on' : 'off'}` }, emp.active ? 'Active' : 'Inactive'));
     tr.append(status);
@@ -135,8 +129,6 @@ async function loadEmployees() {
       employeeForm.id.value = emp.id;
       employeeForm.name.value = emp.name;
       employeeForm.email.value = emp.email || '';
-      employeeForm.role.value = emp.role || '';
-      employeeForm.hourly_rate.value = emp.hourly_rate || '';
       employeeForm.active.checked = !!emp.active;
       $('#employee-cancel').hidden = false;
       employeeForm.scrollIntoView({ behavior: 'smooth' });
@@ -174,8 +166,6 @@ employeeForm.addEventListener('submit', async (e) => {
   const payload = {
     name: employeeForm.name.value,
     email: employeeForm.email.value || null,
-    role: employeeForm.role.value,
-    hourly_rate: Number(employeeForm.hourly_rate.value) || 0,
     active: employeeForm.active.checked,
   };
   try {
@@ -340,36 +330,25 @@ async function runReport() {
     const tbody = $('#report-table tbody');
     tbody.replaceChildren();
     let totalHours = 0;
-    let totalPay = 0;
     for (const r of report) {
       const tr = el('tr');
       tr.append(
         el('td', {}, r.employee_name),
         el('td', {}, r.total_hours.toFixed(2)),
         el('td', {}, String(r.days_worked)),
-        el('td', {}, String(r.entries)),
-        el('td', {}, r.hourly_rate ? r.hourly_rate.toFixed(2) : '—'),
-        el('td', {}, r.total_pay ? r.total_pay.toFixed(2) : '—')
+        el('td', {}, String(r.entries))
       );
       tbody.append(tr);
       totalHours += r.total_hours;
-      totalPay += r.total_pay;
     }
     if (report.length) {
       const tr = el('tr');
       tr.style.fontWeight = '600';
-      tr.append(
-        el('td', {}, 'Total'),
-        el('td', {}, totalHours.toFixed(2)),
-        el('td', {}, ''),
-        el('td', {}, ''),
-        el('td', {}, ''),
-        el('td', {}, totalPay.toFixed(2))
-      );
+      tr.append(el('td', {}, 'Total'), el('td', {}, totalHours.toFixed(2)), el('td', {}, ''), el('td', {}, ''));
       tbody.append(tr);
     } else {
       const tr = el('tr');
-      tr.append(el('td', { colSpan: 6, className: 'empty' }, 'No completed entries in this range.'));
+      tr.append(el('td', { colSpan: 4, className: 'empty' }, 'No completed entries in this range.'));
       tbody.append(tr);
     }
     const csv = $('#report-csv');

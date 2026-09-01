@@ -114,10 +114,7 @@ route('POST', '/api/employees', async (req, res) => {
   const name = String(body.name || '').trim();
   if (!name) throw new HttpError(400, 'name is required');
   const email = body.email ? String(body.email).trim() : null;
-  const role = String(body.role || '').trim();
-  const rate = Number(body.hourly_rate) || 0;
-  if (rate < 0) throw new HttpError(400, 'hourly_rate must be non-negative');
-  const emp = await store.createEmployee({ name, email, role, hourly_rate: rate });
+  const emp = await store.createEmployee({ name, email });
   sendJson(res, 201, emp);
 });
 
@@ -128,17 +125,8 @@ route('PUT', '/api/employees/:id', async (req, res, params) => {
   if (!name) throw new HttpError(400, 'name cannot be empty');
   const email =
     body.email !== undefined ? (body.email ? String(body.email).trim() : null) : emp.email;
-  const role = body.role !== undefined ? String(body.role).trim() : emp.role;
-  const rate = body.hourly_rate !== undefined ? Number(body.hourly_rate) : emp.hourly_rate;
-  if (Number.isNaN(rate) || rate < 0) throw new HttpError(400, 'hourly_rate must be non-negative');
   const active = body.active !== undefined ? !!body.active : !!emp.active;
-  const updated = await store.updateEmployee(emp.id, {
-    name,
-    email,
-    role,
-    hourly_rate: rate,
-    active,
-  });
+  const updated = await store.updateEmployee(emp.id, { name, email, active });
   sendJson(res, 200, updated);
 });
 
@@ -279,7 +267,6 @@ async function buildReport(query) {
       agg = {
         employee_id: row.employee_id,
         employee_name: row.employee_name,
-        hourly_rate: row.hourly_rate,
         total_hours: 0,
         days_worked: new Set(),
         entries: 0,
@@ -291,11 +278,7 @@ async function buildReport(query) {
     agg.entries += 1;
   }
   return [...byEmployee.values()]
-    .map((agg) => ({
-      ...agg,
-      days_worked: agg.days_worked.size,
-      total_pay: Math.round(agg.total_hours * agg.hourly_rate * 100) / 100,
-    }))
+    .map((agg) => ({ ...agg, days_worked: agg.days_worked.size }))
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
 }
 
@@ -306,11 +289,9 @@ route('GET', '/api/reports/summary', async (req, res, params, query) => {
 route('GET', '/api/reports/summary.csv', async (req, res, params, query) => {
   const report = await buildReport(query);
   const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
-  const lines = ['Employee,Total Hours,Days Worked,Entries,Hourly Rate,Total Pay'];
+  const lines = ['Employee,Total Hours,Days Worked,Entries'];
   for (const r of report) {
-    lines.push(
-      [esc(r.employee_name), r.total_hours, r.days_worked, r.entries, r.hourly_rate, r.total_pay].join(',')
-    );
+    lines.push([esc(r.employee_name), r.total_hours, r.days_worked, r.entries].join(','));
   }
   res.writeHead(200, {
     'Content-Type': 'text/csv; charset=utf-8',

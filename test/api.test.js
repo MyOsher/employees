@@ -29,8 +29,6 @@ test('employee CRUD', async () => {
   const created = await call('POST', '/api/employees', {
     name: 'Alice Cohen',
     email: 'alice@example.com',
-    role: 'Engineer',
-    hourly_rate: 50,
   });
   assert.strictEqual(created.status, 201);
   assert.strictEqual(created.data.name, 'Alice Cohen');
@@ -41,10 +39,10 @@ test('employee CRUD', async () => {
   const missingName = await call('POST', '/api/employees', { email: 'y@example.com' });
   assert.strictEqual(missingName.status, 400);
 
-  const updated = await call('PUT', `/api/employees/${created.data.id}`, { role: 'Lead' });
+  const updated = await call('PUT', `/api/employees/${created.data.id}`, { name: 'Alice Cohen-Levi' });
   assert.strictEqual(updated.status, 200);
-  assert.strictEqual(updated.data.role, 'Lead');
-  assert.strictEqual(updated.data.name, 'Alice Cohen');
+  assert.strictEqual(updated.data.name, 'Alice Cohen-Levi');
+  assert.strictEqual(updated.data.email, 'alice@example.com');
 
   const list = await call('GET', '/api/employees');
   assert.strictEqual(list.status, 200);
@@ -74,7 +72,7 @@ test('clock in and out', async () => {
 });
 
 test('manual entries and validation', async () => {
-  const emp = (await call('POST', '/api/employees', { name: 'Carol Mizrahi', hourly_rate: 40 })).data;
+  const emp = (await call('POST', '/api/employees', { name: 'Carol Mizrahi' })).data;
 
   const entry = await call('POST', '/api/entries', {
     employee_id: emp.id,
@@ -116,7 +114,6 @@ test('summary report and CSV', async () => {
   const carol = report.data.find((r) => r.employee_name === 'Carol Mizrahi');
   assert.ok(carol);
   assert.strictEqual(carol.total_hours, 7.5);
-  assert.strictEqual(carol.total_pay, 300);
   assert.strictEqual(carol.days_worked, 1);
 
   const missingRange = await call('GET', '/api/reports/summary');
