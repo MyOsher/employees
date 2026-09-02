@@ -27,19 +27,24 @@ function validatePinFormat(pin) {
   }
 }
 
-// Credentials travel as "Authorization: Bearer manager:<pin>" or
-// "Bearer worker:<employee_id>:<pin>" and are verified against the
-// database on every request.
+// Credentials travel as "Authorization: Bearer manager:<business>:<pin>" or
+// "Bearer worker:<business>:<employee_id>:<pin>" and are verified against that
+// business's database on every request. The business is part of the credential,
+// so a PIN is only ever valid for the business it belongs to.
 function parseAuthHeader(req) {
   const header = req.headers.authorization || '';
-  const match = header.match(/^Bearer (manager|worker):(.+)$/);
+  const match = header.match(/^Bearer (manager|worker):([a-z0-9_-]+):(.+)$/i);
   if (!match) return null;
-  if (match[1] === 'manager') {
-    return { role: 'manager', pin: match[2] };
-  }
-  const parts = match[2].split(':');
-  if (parts.length !== 2) return null;
-  return { role: 'worker', employeeId: Number(parts[0]), pin: parts[1] };
+  const [, role, businessId, rest] = match;
+  if (role === 'manager') return { role: 'manager', businessId, pin: rest };
+  const sep = rest.indexOf(':');
+  if (sep < 1) return null;
+  return {
+    role: 'worker',
+    businessId,
+    employeeId: Number(rest.slice(0, sep)),
+    pin: rest.slice(sep + 1),
+  };
 }
 
 module.exports = { hashPin, makePinHash, pinMatches, validatePinFormat, parseAuthHeader };

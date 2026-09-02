@@ -3,7 +3,8 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const store = require('./store');
+const { storeFor } = require('./store');
+const { getBusiness, publicBusinesses } = require('./config');
 const { HttpError } = require('./errors');
 const { makePinHash, pinMatches, validatePinFormat, parseAuthHeader } = require('./auth');
 
@@ -48,6 +49,7 @@ function readBody(req) {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_DAILY_STANDARD = 510; // 08:30, the usual Israeli standard day
 
 function parseIsoOrThrow(value, field) {
   const d = new Date(value);
@@ -68,13 +70,13 @@ function withHours(entry) {
   return { ...entry, hours: entryHours(entry) };
 }
 
-async function getEmployeeOrThrow(id) {
+async function getEmployeeOrThrow(store, id) {
   const emp = await store.getEmployee(id);
   if (!emp) throw new HttpError(404, 'Employee not found');
   return emp;
 }
 
-async function getEntryOrThrow(id) {
+async function getEntryOrThrow(store, id) {
   const entry = await store.getEntry(id);
   if (!entry) throw new HttpError(404, 'Time entry not found');
   return entry;
@@ -96,17 +98,20 @@ function validateEntryTimes(clockIn, clockOut, breakMinutes) {
 async function authenticate(req) {
   const cred = parseAuthHeader(req);
   if (!cred) return null;
+  const business = getBusiness(cred.businessId);
+  if (!business) return null;
+  const store = storeFor(business.id);
   if (cred.role === 'manager') {
     const settings = await store.getSettings();
     if (settings && pinMatches(cred.pin, settings.manager_pin_hash, settings.manager_pin_salt)) {
-      return { role: 'manager' };
+      return { role: 'manager', business, store };
     }
     return null;
   }
   if (!Number.isInteger(cred.employeeId)) return null;
   const emp = await store.getEmployeeSecret(cred.employeeId);
   if (emp && emp.active && emp.pin_hash && pinMatches(cred.pin, emp.pin_hash, emp.pin_salt)) {
-    return { role: 'worker', employeeId: emp.id };
+    return { role: 'worker', employeeId: emp.id, business, store };
   }
   return null;
 }
@@ -144,29 +149,42 @@ function route(method, pattern, handler) {
 
 // --- login ---
 
-// Names only, for the login screen's worker picker.
-route('GET', '/api/login/employees', async (req, res) => {
-  const employees = await store.listEmployees(true);
+// The businesses the login screen offers. Never includes credentials.
+route('GET', '/api/businesses', (req, res) => {
+  sendJson(res, 200, publicBusinesses());
+});
+
+// Names only, for the login screen's worker picker, scoped to one business.
+route('GET', '/api/login/employees', async (req, res, params, query) => {
+  const business = getBusiness(query.get('business'));
+  if (!business) throw new HttpError(400, 'Unknown business');
+  const employees = await storeFor(business.id).listEmployees(true);
   sendJson(res, 200, employees.map(({ id, name, has_pin }) => ({ id, name, has_pin: !!has_pin })));
 });
 
 route('POST', '/api/login', async (req, res) => {
   const body = await readBody(req);
+  const businessId = String(body.business || '');
   const fakeReq = {
     headers: {
       authorization:
         body.role === 'manager'
-          ? `Bearer manager:${body.pin}`
-          : `Bearer worker:${body.employee_id}:${body.pin}`,
+          ? `Bearer manager:${businessId}:${body.pin}`
+          : `Bearer worker:${businessId}:${body.employee_id}:${body.pin}`,
     },
   };
   const auth = await authenticate(fakeReq);
   if (!auth) throw new HttpError(401, 'Wrong PIN');
+  const business = { id: auth.business.id, name: auth.business.name, full_report: auth.business.fullReport };
   if (auth.role === 'worker') {
-    const emp = await getEmployeeOrThrow(auth.employeeId);
-    return sendJson(res, 200, { role: 'worker', employee: { id: emp.id, name: emp.name } });
+    const emp = await getEmployeeOrThrow(auth.store, auth.employeeId);
+    return sendJson(res, 200, {
+      role: 'worker',
+      business,
+      employee: { id: emp.id, name: emp.name },
+    });
   }
-  sendJson(res, 200, { role: 'manager' });
+  sendJson(res, 200, { role: 'manager', business });
 });
 
 route('POST', '/api/settings/manager-pin', async (req, res) => {
@@ -175,8 +193,30 @@ route('POST', '/api/settings/manager-pin', async (req, res) => {
   const body = await readBody(req);
   validatePinFormat(body.new_pin);
   const { hash, salt } = makePinHash(String(body.new_pin));
-  await store.setManagerPin(hash, salt);
+  await auth.store.setManagerPin(hash, salt);
   sendJson(res, 200, { ok: true });
+});
+
+// The standard working day (תקן) drives the full report's overtime columns.
+route('POST', '/api/settings/daily-standard', async (req, res) => {
+  const auth = await requireAuth(req);
+  requireManager(auth);
+  const body = await readBody(req);
+  const minutes = Number(body.minutes);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 24 * 60) {
+    throw new HttpError(400, 'minutes must be between 0 and 1440');
+  }
+  await auth.store.setDailyStandard(minutes);
+  sendJson(res, 200, { ok: true });
+});
+
+route('GET', '/api/settings', async (req, res) => {
+  const auth = await requireAuth(req);
+  const settings = await auth.store.getSettings();
+  sendJson(res, 200, {
+    business: { id: auth.business.id, name: auth.business.name, full_report: auth.business.fullReport },
+    daily_standard_minutes: (settings && settings.daily_standard_minutes) || 510,
+  });
 });
 
 // --- employees ---
@@ -184,9 +224,9 @@ route('POST', '/api/settings/manager-pin', async (req, res) => {
 route('GET', '/api/employees', async (req, res, params, query) => {
   const auth = await requireAuth(req);
   if (auth.role === 'worker') {
-    return sendJson(res, 200, [await getEmployeeOrThrow(auth.employeeId)]);
+    return sendJson(res, 200, [await getEmployeeOrThrow(auth.store, auth.employeeId)]);
   }
-  sendJson(res, 200, await store.listEmployees(query.get('active') === 'true'));
+  sendJson(res, 200, await auth.store.listEmployees(query.get('active') === 'true'));
 });
 
 route('POST', '/api/employees', async (req, res) => {
@@ -203,13 +243,13 @@ route('POST', '/api/employees', async (req, res) => {
     fields.pin_hash = hash;
     fields.pin_salt = salt;
   }
-  sendJson(res, 201, await store.createEmployee(fields));
+  sendJson(res, 201, await auth.store.createEmployee(fields));
 });
 
 route('PUT', '/api/employees/:id', async (req, res, params) => {
   const auth = await requireAuth(req);
   requireManager(auth);
-  const emp = await getEmployeeOrThrow(params.id);
+  const emp = await getEmployeeOrThrow(auth.store, params.id);
   const body = await readBody(req);
   const name = body.name !== undefined ? String(body.name).trim() : emp.name;
   if (!name) throw new HttpError(400, 'name cannot be empty');
@@ -223,14 +263,14 @@ route('PUT', '/api/employees/:id', async (req, res, params) => {
     fields.pin_hash = hash;
     fields.pin_salt = salt;
   }
-  sendJson(res, 200, await store.updateEmployee(emp.id, fields));
+  sendJson(res, 200, await auth.store.updateEmployee(emp.id, fields));
 });
 
 route('DELETE', '/api/employees/:id', async (req, res, params) => {
   const auth = await requireAuth(req);
   requireManager(auth);
-  await getEmployeeOrThrow(params.id);
-  await store.deleteEmployee(params.id);
+  await getEmployeeOrThrow(auth.store, params.id);
+  await auth.store.deleteEmployee(params.id);
   sendJson(res, 200, { ok: true });
 });
 
@@ -239,13 +279,13 @@ route('DELETE', '/api/employees/:id', async (req, res, params) => {
 route('POST', '/api/employees/:id/clock-in', async (req, res, params) => {
   const auth = await requireAuth(req);
   requireSelfOrManager(auth, params.id);
-  const emp = await getEmployeeOrThrow(params.id);
+  const emp = await getEmployeeOrThrow(auth.store, params.id);
   if (!emp.active) throw new HttpError(400, 'Employee is inactive');
-  if (await store.getOpenEntry(emp.id)) {
+  if (await auth.store.getOpenEntry(emp.id)) {
     throw new HttpError(409, 'Employee is already clocked in');
   }
   const now = new Date().toISOString();
-  const entry = await store.createEntry({
+  const entry = await auth.store.createEntry({
     employee_id: emp.id,
     work_date: now.slice(0, 10),
     clock_in: now,
@@ -259,14 +299,14 @@ route('POST', '/api/employees/:id/clock-in', async (req, res, params) => {
 route('POST', '/api/employees/:id/clock-out', async (req, res, params) => {
   const auth = await requireAuth(req);
   requireSelfOrManager(auth, params.id);
-  const emp = await getEmployeeOrThrow(params.id);
-  const open = await store.getOpenEntry(emp.id);
+  const emp = await getEmployeeOrThrow(auth.store, params.id);
+  const open = await auth.store.getOpenEntry(emp.id);
   if (!open) throw new HttpError(409, 'Employee is not clocked in');
   const body = await readBody(req);
   const breakMinutes = Number.isInteger(body.break_minutes) ? body.break_minutes : 0;
   const now = new Date().toISOString();
   validateEntryTimes(open.clock_in, now, breakMinutes);
-  const updated = await store.updateEntry(open.id, {
+  const updated = await auth.store.updateEntry(open.id, {
     work_date: open.work_date,
     clock_in: open.clock_in,
     clock_out: now,
@@ -295,7 +335,7 @@ route('GET', '/api/entries', async (req, res, params, query) => {
     filters.to = to;
   }
   if (query.get('open') === 'true') filters.open = true;
-  const rows = await store.listEntries(filters);
+  const rows = await auth.store.listEntries(filters);
   sendJson(res, 200, rows.map(withHours));
 });
 
@@ -306,14 +346,14 @@ route('POST', '/api/entries', async (req, res) => {
   if (auth.role === 'worker' && body.employee_id && Number(body.employee_id) !== auth.employeeId) {
     throw new HttpError(403, 'Access limited to your own records');
   }
-  const emp = await getEmployeeOrThrow(employeeId);
+  const emp = await getEmployeeOrThrow(auth.store, employeeId);
   const clockIn = parseIsoOrThrow(body.clock_in, 'clock_in');
   const clockOut = body.clock_out ? parseIsoOrThrow(body.clock_out, 'clock_out') : null;
   const breakMinutes = body.break_minutes === undefined ? 0 : body.break_minutes;
   validateEntryTimes(clockIn, clockOut, breakMinutes);
   const workDate =
     body.work_date && DATE_RE.test(body.work_date) ? body.work_date : clockIn.slice(0, 10);
-  const entry = await store.createEntry({
+  const entry = await auth.store.createEntry({
     employee_id: emp.id,
     work_date: workDate,
     clock_in: clockIn,
@@ -326,7 +366,7 @@ route('POST', '/api/entries', async (req, res) => {
 
 route('PUT', '/api/entries/:id', async (req, res, params) => {
   const auth = await requireAuth(req);
-  const entry = await getEntryOrThrow(params.id);
+  const entry = await getEntryOrThrow(auth.store, params.id);
   requireSelfOrManager(auth, entry.employee_id);
   const body = await readBody(req);
   const clockIn = body.clock_in !== undefined ? parseIsoOrThrow(body.clock_in, 'clock_in') : entry.clock_in;
@@ -346,7 +386,7 @@ route('PUT', '/api/entries/:id', async (req, res, params) => {
     workDate = body.work_date;
   }
   const notes = body.notes !== undefined ? String(body.notes) : entry.notes;
-  const updated = await store.updateEntry(entry.id, {
+  const updated = await auth.store.updateEntry(entry.id, {
     work_date: workDate,
     clock_in: clockIn,
     clock_out: clockOut,
@@ -358,9 +398,9 @@ route('PUT', '/api/entries/:id', async (req, res, params) => {
 
 route('DELETE', '/api/entries/:id', async (req, res, params) => {
   const auth = await requireAuth(req);
-  const entry = await getEntryOrThrow(params.id);
+  const entry = await getEntryOrThrow(auth.store, params.id);
   requireSelfOrManager(auth, entry.employee_id);
-  await store.deleteEntry(params.id);
+  await auth.store.deleteEntry(params.id);
   sendJson(res, 200, { ok: true });
 });
 
@@ -372,7 +412,7 @@ async function buildReport(query, auth) {
   if (!from || !DATE_RE.test(from) || !to || !DATE_RE.test(to)) {
     throw new HttpError(400, 'from and to (YYYY-MM-DD) are required');
   }
-  let rows = await store.completedEntries(from, to);
+  let rows = await auth.store.completedEntries(from, to);
   if (auth.role === 'worker') {
     rows = rows.filter((row) => row.employee_id === auth.employeeId);
   }
@@ -411,44 +451,104 @@ route('GET', '/api/reports/monthly', async (req, res, params, query) => {
   if (!Number.isInteger(employeeId) || employeeId <= 0) {
     throw new HttpError(400, 'employee_id is required');
   }
-  const emp = await getEmployeeOrThrow(employeeId);
+  const emp = await getEmployeeOrThrow(auth.store, employeeId);
   const [year, monthNum] = month.split('-').map(Number);
   const dayCount = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
   const from = `${month}-01`;
   const to = `${month}-${String(dayCount).padStart(2, '0')}`;
 
   const byDate = new Map();
-  for (const entry of await store.listEntries({ employeeId: emp.id, from, to })) {
+  for (const entry of await auth.store.listEntries({ employeeId: emp.id, from, to })) {
     if (!byDate.has(entry.work_date)) byDate.set(entry.work_date, []);
     byDate.get(entry.work_date).push(entry);
   }
 
+  const settings = await auth.store.getSettings();
+  const standard = (settings && settings.daily_standard_minutes) || DEFAULT_DAILY_STANDARD;
+
   const days = [];
-  const totals = { gross_minutes: 0, net_minutes: 0, days_worked: 0 };
+  const totals = {
+    gross_minutes: 0,
+    net_minutes: 0,
+    regular_minutes: 0,
+    ot125_minutes: 0,
+    ot150_minutes: 0,
+    ot200_minutes: 0,
+    break_minutes: 0,
+    standard_minutes: 0,
+    deficit_minutes: 0,
+    days_worked: 0,
+  };
   for (let d = 1; d <= dayCount; d++) {
     const date = `${month}-${String(d).padStart(2, '0')}`;
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
     const shifts = (byDate.get(date) || []).sort((a, b) => a.clock_in.localeCompare(b.clock_in));
     let gross = 0;
     let net = 0;
+    let breaks = 0;
+    const notes = [];
     for (const shift of shifts) {
+      breaks += shift.break_minutes;
+      if (shift.notes) notes.push(shift.notes);
       if (!shift.clock_out) continue;
       const span = Math.max(0, Math.round((new Date(shift.clock_out) - new Date(shift.clock_in)) / 60000));
       gross += span;
       net += Math.max(0, span - shift.break_minutes);
     }
+    const worked = shifts.length > 0;
+    // Saturday is a rest day: every hour counts at 200%. Otherwise hours up to
+    // the standard day are regular, the next two hours 125%, the rest 150%.
+    const restDay = weekday === 6;
+    const dayStandard = worked && !restDay ? standard : 0;
+    const regular = restDay ? 0 : Math.min(net, standard);
+    const overtime = restDay ? 0 : Math.max(net - regular, 0);
+    const ot125 = Math.min(overtime, 120);
+    const ot150 = overtime - ot125;
+    const ot200 = restDay ? net : 0;
+    const deficit = worked && !restDay ? Math.max(standard - net, 0) : 0;
+
     if (net > 0) totals.days_worked += 1;
     totals.gross_minutes += gross;
     totals.net_minutes += net;
+    totals.regular_minutes += regular;
+    totals.ot125_minutes += ot125;
+    totals.ot150_minutes += ot150;
+    totals.ot200_minutes += ot200;
+    totals.break_minutes += breaks;
+    totals.standard_minutes += dayStandard;
+    totals.deficit_minutes += deficit;
+
     days.push({
       date,
-      weekday: new Date(`${date}T00:00:00Z`).getUTCDay(),
+      weekday,
+      worked,
       shifts: shifts.map((s) => ({ clock_in: s.clock_in, clock_out: s.clock_out })),
       gross_minutes: gross,
       net_minutes: net,
+      regular_minutes: regular,
+      ot125_minutes: ot125,
+      ot150_minutes: ot150,
+      ot200_minutes: ot200,
+      break_minutes: breaks,
+      standard_minutes: dayStandard,
+      deficit_minutes: deficit,
+      notes: notes.join(' | '),
     });
   }
 
-  sendJson(res, 200, { employee: { id: emp.id, name: emp.name }, from, to, days, totals });
+  sendJson(res, 200, {
+    employee: { id: emp.id, name: emp.name },
+    business: {
+      id: auth.business.id,
+      name: auth.business.name,
+      full_report: auth.business.fullReport,
+    },
+    daily_standard_minutes: standard,
+    from,
+    to,
+    days,
+    totals,
+  });
 });
 
 route('GET', '/api/reports/summary', async (req, res, params, query) => {

@@ -2,19 +2,20 @@
 
 const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
+const fs = require('node:fs');
 
-// On Vercel the deployment filesystem is read-only; only /tmp is writable
-// (and ephemeral — use an external database for durable production data).
-const DB_PATH =
-  process.env.DB_PATH ||
-  (process.env.VERCEL
-    ? '/tmp/workhours.db'
-    : path.join(__dirname, 'data', 'workhours.db'));
+const DATA_DIR =
+  process.env.DB_DIR || (process.env.VERCEL ? '/tmp' : path.join(__dirname, 'data'));
 
-function createDb(dbPath = DB_PATH) {
-  if (dbPath !== ':memory:') {
-    require('node:fs').mkdirSync(path.dirname(dbPath), { recursive: true });
-  }
+// Each business gets its own SQLite file — genuinely separate databases.
+function resolveDbPath(fileName) {
+  if (process.env.DB_PATH === ':memory:') return ':memory:';
+  return path.join(DATA_DIR, fileName);
+}
+
+function createDb(fileName) {
+  const dbPath = resolveDbPath(fileName);
+  if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
@@ -27,12 +28,6 @@ function createDb(dbPath = DB_PATH) {
       pin_hash    TEXT,
       pin_salt    TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      id               INTEGER PRIMARY KEY CHECK (id = 1),
-      manager_pin_hash TEXT NOT NULL,
-      manager_pin_salt TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS time_entries (
@@ -48,11 +43,16 @@ function createDb(dbPath = DB_PATH) {
 
     CREATE INDEX IF NOT EXISTS idx_entries_employee_date
       ON time_entries (employee_id, work_date);
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id                     INTEGER PRIMARY KEY CHECK (id = 1),
+      manager_pin_hash       TEXT NOT NULL,
+      manager_pin_salt       TEXT NOT NULL,
+      daily_standard_minutes INTEGER NOT NULL DEFAULT 510
+    );
   `);
-  // Seed the default manager PIN (0000) on first run; the manager
-  // changes it from the app.
-  const hasSettings = db.prepare('SELECT id FROM app_settings WHERE id = 1').get();
-  if (!hasSettings) {
+  // Seed the default manager PIN (0000) on first run; changed from the app.
+  if (!db.prepare('SELECT id FROM app_settings WHERE id = 1').get()) {
     const { makePinHash } = require('./auth');
     const { hash, salt } = makePinHash('0000');
     db.prepare(
@@ -62,4 +62,4 @@ function createDb(dbPath = DB_PATH) {
   return db;
 }
 
-module.exports = { createDb, DB_PATH };
+module.exports = { createDb };

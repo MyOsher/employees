@@ -94,6 +94,16 @@ const translations = {
     managerSignature: 'Manager signature',
     pickEmployeeFirst: 'Choose an employee and a month',
     weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    chooseBusiness: 'Choose a business…',
+    changeDailyStandard: 'Set standard day',
+    promptDailyStandard: 'Standard working day in HH:MM (e.g. 08:30):',
+    standardUpdated: 'Standard working day updated',
+    badTimeFormat: 'Enter a time as HH:MM',
+    thOt125: '125%',
+    thOt150: '150%',
+    thOt200: '200%',
+    thStandard: 'Standard',
+    thDeficit: 'Deficit',
   },
   he: {
     appTitle: 'שעות עבודה',
@@ -183,6 +193,16 @@ const translations = {
     managerSignature: 'חתימת המנהל',
     pickEmployeeFirst: 'בחרו עובד וחודש',
     weekdays: ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'שב'],
+    chooseBusiness: 'בחרו עסק…',
+    changeDailyStandard: 'הגדרת תקן יומי',
+    promptDailyStandard: "תקן יום עבודה בפורמט שעות:דקות (למשל 08:30):",
+    standardUpdated: 'התקן היומי עודכן',
+    badTimeFormat: 'יש להזין שעה בפורמט HH:MM',
+    thOt125: '125%',
+    thOt150: '150%',
+    thOt200: '200%',
+    thStandard: 'תקן',
+    thDeficit: 'חוסר',
   },
 };
 
@@ -231,14 +251,14 @@ $('#lang-toggle').addEventListener('click', () => {
 let auth = null;
 try {
   const saved = JSON.parse(localStorage.getItem('auth'));
-  if (saved && (saved.role === 'manager' || saved.role === 'worker')) auth = saved;
+  if (saved && saved.business && (saved.role === 'manager' || saved.role === 'worker')) auth = saved;
 } catch {}
 
 function authHeader() {
   if (!auth) return null;
   return auth.role === 'manager'
-    ? `Bearer manager:${auth.pin}`
-    : `Bearer worker:${auth.employeeId}:${auth.pin}`;
+    ? `Bearer manager:${auth.business.id}:${auth.pin}`
+    : `Bearer worker:${auth.business.id}:${auth.employeeId}:${auth.pin}`;
 }
 
 function setAuth(next) {
@@ -252,8 +272,14 @@ function setAuth(next) {
 
 function updateUserLabel() {
   const label = $('#user-label');
-  if (!auth) label.textContent = '';
-  else label.textContent = auth.role === 'manager' ? t('managerLabel') : auth.name;
+  const business = $('#business-label');
+  if (!auth) {
+    label.textContent = '';
+    business.textContent = '';
+    return;
+  }
+  label.textContent = auth.role === 'manager' ? t('managerLabel') : auth.name;
+  business.textContent = auth.business.name;
 }
 
 const isWorker = () => auth && auth.role === 'worker';
@@ -274,6 +300,7 @@ function applyAuthUI() {
   $('#entry-form [name="employee_id"]').hidden = isWorker();
   $('#entries-filter-employee').hidden = isWorker();
   $('#monthly-employee').hidden = isWorker();
+  $('#change-daily-standard').hidden = !auth.business.full_report;
   $('#monthly-report').hidden = true;
   $('#monthly-print').hidden = true;
   currentTab = 'dashboard';
@@ -302,6 +329,7 @@ async function api(path, options = {}) {
 
 let loginRole = 'worker';
 let loginEmployees = [];
+let businesses = [];
 
 function renderLoginRole() {
   $('#login-role-worker').classList.toggle('active', loginRole === 'worker');
@@ -309,22 +337,53 @@ function renderLoginRole() {
   $('#login-employee').hidden = loginRole !== 'worker';
 }
 
-async function renderLoginEmployees() {
-  renderLoginRole();
-  const select = $('#login-employee');
-  try {
-    loginEmployees = await api('/api/login/employees');
-  } catch {
-    loginEmployees = [];
+async function renderLoginBusinesses() {
+  const select = $('#login-business');
+  if (!businesses.length) {
+    try {
+      businesses = await api('/api/businesses');
+    } catch {
+      businesses = [];
+    }
   }
   const prev = select.value;
+  select.replaceChildren(el('option', { value: '' }, t('chooseBusiness')));
+  for (const b of businesses) select.append(el('option', { value: b.id }, b.name));
+  // Remember the last business used on this device.
+  let saved = '';
+  try {
+    saved = localStorage.getItem('lastBusiness') || '';
+  } catch {}
+  select.value = prev || saved || (businesses.length === 1 ? businesses[0].id : '');
+}
+
+async function renderLoginEmployees() {
+  renderLoginRole();
+  await renderLoginBusinesses();
+  const select = $('#login-employee');
+  const businessId = $('#login-business').value;
+  loginEmployees = [];
+  if (businessId) {
+    try {
+      loginEmployees = await api(`/api/login/employees?business=${encodeURIComponent(businessId)}`);
+    } catch {
+      loginEmployees = [];
+    }
+  }
   select.replaceChildren(el('option', { value: '' }, t('chooseWorker')));
   for (const emp of loginEmployees) {
     const label = emp.has_pin ? emp.name : `${emp.name} ${t('noPinSuffix')}`;
     select.append(el('option', { value: emp.id, disabled: !emp.has_pin }, label));
   }
-  select.value = prev;
 }
+
+// Switching business reloads that business's worker list.
+$('#login-business').onchange = () => {
+  try {
+    localStorage.setItem('lastBusiness', $('#login-business').value);
+  } catch {}
+  renderLoginEmployees();
+};
 
 $('#login-role-worker').onclick = () => {
   loginRole = 'worker';
@@ -338,18 +397,25 @@ $('#login-role-manager').onclick = () => {
 async function doLogin() {
   const pin = $('#login-pin').value.trim();
   const employeeId = Number($('#login-employee').value);
-  if (!pin || (loginRole === 'worker' && !employeeId)) return;
+  const business = $('#login-business').value;
+  if (!business || !pin || (loginRole === 'worker' && !employeeId)) return;
   try {
     const body =
       loginRole === 'manager'
-        ? { role: 'manager', pin }
-        : { role: 'worker', employee_id: employeeId, pin };
+        ? { role: 'manager', business, pin }
+        : { role: 'worker', business, employee_id: employeeId, pin };
     const result = await api('/api/login', { method: 'POST', body: JSON.stringify(body) });
     $('#login-pin').value = '';
     if (result.role === 'manager') {
-      setAuth({ role: 'manager', pin });
+      setAuth({ role: 'manager', pin, business: result.business });
     } else {
-      setAuth({ role: 'worker', pin, employeeId: result.employee.id, name: result.employee.name });
+      setAuth({
+        role: 'worker',
+        pin,
+        business: result.business,
+        employeeId: result.employee.id,
+        name: result.employee.name,
+      });
     }
   } catch (err) {
     toast(err.message === 'Wrong PIN' ? t('wrongPin') : err.message, true);
@@ -549,6 +615,31 @@ $('#change-manager-pin').onclick = async () => {
     });
     setAuth({ ...auth, pin: newPin.trim() });
     toast(t('pinUpdated'));
+  } catch (err) {
+    toast(err.message, true);
+  }
+};
+
+$('#change-daily-standard').onclick = async () => {
+  let current = '08:30';
+  try {
+    const settings = await api('/api/settings');
+    current = fmtMinutes(settings.daily_standard_minutes);
+  } catch {}
+  const answer = prompt(t('promptDailyStandard'), current);
+  if (!answer) return;
+  const match = answer.trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!match) {
+    toast(t('badTimeFormat'), true);
+    return;
+  }
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  try {
+    await api('/api/settings/daily-standard', {
+      method: 'POST',
+      body: JSON.stringify({ minutes }),
+    });
+    toast(t('standardUpdated'));
   } catch (err) {
     toast(err.message, true);
   }
@@ -798,30 +889,42 @@ async function runMonthlyReport() {
   }
 }
 
+// Column sets: the trimmed report stops after regular hours; the full payroll
+// report adds the overtime tiers, break, standard, deficit and notes columns.
+const BASE_COLUMNS = [
+  { key: 'gross_minutes', label: 'thGross' },
+  { key: 'net_minutes', label: 'thNet' },
+  { key: 'regular_minutes', label: 'thRegular' },
+];
+const FULL_COLUMNS = [
+  { key: 'ot125_minutes', label: 'thOt125' },
+  { key: 'ot150_minutes', label: 'thOt150' },
+  { key: 'ot200_minutes', label: 'thOt200' },
+  { key: 'break_minutes', label: 'thBreak' },
+  { key: 'standard_minutes', label: 'thStandard' },
+  { key: 'deficit_minutes', label: 'thDeficit' },
+];
+
 function renderMonthlyReport(report) {
   const container = $('#monthly-report');
   container.replaceChildren();
+  const full = !!(report.business && report.business.full_report);
+  const columns = full ? [...BASE_COLUMNS, ...FULL_COLUMNS] : BASE_COLUMNS;
 
   const fmtDate = (iso) => iso.split('-').reverse().join('/');
   container.append(
     el('div', { className: 'ts-title' }, t('monthlyTitle', fmtDate(report.from), fmtDate(report.to))),
-    el('div', { className: 'ts-employee' }, report.employee.name)
+    el('div', { className: 'ts-employee' }, `${report.business.name} — ${report.employee.name}`)
   );
 
   const table = el('table', { className: 'ts-table' });
-  const headers = [
-    t('thDay'),
-    t('thIn'),
-    t('thOut'),
-    t('thIn'),
-    t('thOut'),
-    t('thGross'),
-    t('thNet'),
-    t('thRegular'),
-  ];
   const thead = el('thead');
   const headRow = el('tr');
-  headers.forEach((h) => headRow.append(el('th', {}, h)));
+  [t('thDay'), t('thIn'), t('thOut'), t('thIn'), t('thOut')].forEach((h) =>
+    headRow.append(el('th', {}, h))
+  );
+  columns.forEach((c) => headRow.append(el('th', {}, t(c.label))));
+  if (full) headRow.append(el('th', {}, t('thNotes')));
   thead.append(headRow);
   table.append(thead);
 
@@ -838,12 +941,9 @@ function renderMonthlyReport(report) {
         el('td', {}, shift && shift.clock_out ? fmtTime(shift.clock_out) : '')
       );
     }
-    const worked = day.gross_minutes > 0;
-    tr.append(
-      el('td', {}, worked ? fmtMinutes(day.gross_minutes) : ''),
-      el('td', {}, worked ? fmtMinutes(day.net_minutes) : ''),
-      el('td', {}, worked ? fmtMinutes(day.net_minutes) : '')
-    );
+    // Blank rather than 00:00 on days with nothing to show.
+    columns.forEach((c) => tr.append(el('td', {}, day[c.key] ? fmtMinutes(day[c.key]) : '')));
+    if (full) tr.append(el('td', { className: 'ts-notes' }, day.notes || ''));
     tbody.append(tr);
   }
   table.append(tbody);
@@ -851,11 +951,10 @@ function renderMonthlyReport(report) {
   const tfoot = el('tfoot');
   const footRow = el('tr');
   footRow.append(el('th', { colSpan: 5 }, t('total')));
-  footRow.append(
-    el('th', {}, fmtMinutes(report.totals.gross_minutes)),
-    el('th', {}, fmtMinutes(report.totals.net_minutes)),
-    el('th', {}, fmtMinutes(report.totals.net_minutes))
+  columns.forEach((c) =>
+    footRow.append(el('th', {}, report.totals[c.key] ? fmtMinutes(report.totals[c.key]) : ''))
   );
+  if (full) footRow.append(el('th', {}, ''));
   tfoot.append(footRow);
   table.append(tfoot);
   container.append(table);

@@ -275,3 +275,7 @@ td.actions button { padding: 0.25rem 0.6rem; font-size: 0.85rem; }
   .ts-table { font-size: 9pt; }
   .ts-table tr.ts-weekend { background: #f2f2f2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+.business-label { font-weight: 600; font-size: 0.9rem; }
+.manager-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.ts-notes { text-align: start !important; max-width: 10rem; }

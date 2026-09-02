@@ -17,6 +17,7 @@
       <button class="tab" data-tab="monthly" data-i18n="tabMonthly">Monthly report</button>
     </nav>
     <span class="header-end">
+      <span id="business-label" class="business-label"></span>
       <span id="user-label" class="user-label"></span>
       <button id="logout-btn" data-i18n="logout" hidden>Log out</button>
       <button id="lang-toggle" class="lang">עברית</button>
@@ -30,6 +31,7 @@
     <section id="login-screen" class="panel login-panel" hidden>
       <h2 data-i18n="loginTitle">Sign in</h2>
       <div class="login-box">
+        <select id="login-business"></select>
         <div class="role-toggle">
           <button id="login-role-worker" class="active" data-i18n="roleWorker">Worker</button>
           <button id="login-role-manager" data-i18n="roleManager">Manager</button>
@@ -64,7 +66,10 @@
         </thead>
         <tbody></tbody>
       </table>
-      <p><button id="change-manager-pin" data-i18n="changeManagerPin">Change manager PIN</button></p>
+      <p class="manager-actions">
+        <button id="change-manager-pin" data-i18n="changeManagerPin">Change manager PIN</button>
+        <button id="change-daily-standard" data-i18n="changeDailyStandard">Set standard day</button>
+      </p>
     </section>
 
     <!-- Time entries -->
