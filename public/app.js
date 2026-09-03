@@ -206,6 +206,44 @@ const translations = {
   },
 };
 
+// The server answers in English; show those messages in the chosen language.
+const errorTranslations = {
+  he: {
+    'Authentication required': 'נדרשת התחברות מחדש',
+    'Manager access required': 'הפעולה מותרת למנהל בלבד',
+    'Access limited to your own records': 'אפשר לצפות ולערוך רק את הדיווחים שלך',
+    'Employee not found': 'העובד לא נמצא',
+    'Time entry not found': 'הדיווח לא נמצא',
+    'Unknown business': 'עסק לא מוכר',
+    'Wrong PIN': 'קוד שגוי',
+    'name is required': 'חובה להזין שם',
+    'name cannot be empty': 'השם לא יכול להיות ריק',
+    'An employee with this email already exists': 'כבר קיים עובד עם כתובת המייל הזו',
+    'Employee is already clocked in': 'כבר נרשמה כניסה — יש להחתים יציאה קודם',
+    'Employee is not clocked in': 'לא נרשמה כניסה פתוחה',
+    'Employee is inactive': 'העובד מוגדר כלא פעיל',
+    'clock_out must be after clock_in': 'שעת היציאה חייבת להיות אחרי שעת הכניסה',
+    'break_minutes must be a non-negative integer': 'ההפסקה חייבת להיות מספר דקות שאינו שלילי',
+    'PIN must be 4-8 digits': 'הקוד חייב להיות 4-8 ספרות',
+    'Invalid or missing clock_in': 'חסרה או שגויה שעת הכניסה',
+    'Invalid or missing clock_out': 'חסרה או שגויה שעת היציאה',
+    'employee_id is required': 'יש לבחור עובד',
+    'month must be YYYY-MM': 'יש לבחור חודש',
+    'from and to (YYYY-MM-DD) are required': 'יש לבחור טווח תאריכים',
+    'Internal server error': 'שגיאה בשרת — נסו שוב',
+  },
+};
+
+function translateError(message) {
+  const map = errorTranslations[lang];
+  if (map && map[message]) return map[message];
+  // Database errors carry a technical suffix; keep the message generic.
+  if (String(message).startsWith('Database error')) {
+    return lang === 'he' ? 'שגיאה בשמירת הנתונים — נסו שוב' : 'Could not save — please try again';
+  }
+  return message;
+}
+
 function initialLang() {
   try {
     const saved = localStorage.getItem('lang');
@@ -297,7 +335,13 @@ function applyAuthUI() {
   }
   // Workers manage only themselves: no Employees tab, no employee pickers.
   $('[data-tab="employees"]').hidden = isWorker();
-  $('#entry-form [name="employee_id"]').hidden = isWorker();
+  // A worker always files entries for themselves, so the picker is hidden — and
+  // must also be dropped from validation: a hidden, required, empty select makes
+  // the browser silently refuse to submit the form.
+  const entryEmployee = $('#entry-form [name="employee_id"]');
+  entryEmployee.hidden = isWorker();
+  entryEmployee.required = !isWorker();
+  entryEmployee.disabled = isWorker();
   $('#entries-filter-employee').hidden = isWorker();
   $('#monthly-employee').hidden = isWorker();
   $('#change-daily-standard').hidden = !auth.business.full_report;
@@ -318,10 +362,10 @@ async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401 && auth && !path.startsWith('/api/login')) {
     setAuth(null);
-    throw new Error(t('wrongPin'));
+    throw new Error(translateError('Authentication required'));
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(translateError(data.error) || `Request failed (${res.status})`);
   return data;
 }
 
@@ -418,7 +462,7 @@ async function doLogin() {
       });
     }
   } catch (err) {
-    toast(err.message === 'Wrong PIN' ? t('wrongPin') : err.message, true);
+    toast(err.message, true);
   }
 }
 
