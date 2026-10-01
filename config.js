@@ -8,8 +8,8 @@
 //
 // The Supabase publishable key is safe to ship in the repo (it is public by
 // design); any field can be overridden with an environment variable.
-const DEFAULT_URL = process.env.SUPABASE_URL || 'https://mumsporfxfzaqxnvjqjh.supabase.co';
-const DEFAULT_KEY = process.env.SUPABASE_KEY || 'sb_publishable_0LEF28i9QofdwYZb_YyrBw_rNy--uCJ';
+const DEFAULT_URL = process.env.SUPABASE_URL || 'https://mqxqxjbockndgmkmksrj.supabase.co';
+const DEFAULT_KEY = process.env.SUPABASE_KEY || 'sb_publishable_8EII3Rc15g2m0kVu2AUR1g_g01bZbpC';
 
 const BUSINESSES = [
   {
